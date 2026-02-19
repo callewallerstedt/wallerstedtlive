@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { prisma } from "@/lib/prisma";
+
 import { getStreamOverlayState, StreamOverlayMode, updateStreamOverlayState } from "@/lib/stream-overlay";
 
 export const runtime = "nodejs";
+void prisma;
 
 type UpdatePayload = {
   mode?: StreamOverlayMode;

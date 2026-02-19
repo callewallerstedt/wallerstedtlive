@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { prisma } from "@/lib/prisma";
+
 import { getOverlayGoalsState, updateOverlayGoalsState } from "@/lib/overlay-goals";
 
 export const runtime = "nodejs";
+void prisma;
 
 type UpdatePayload = {
   likeGoalTarget?: number;

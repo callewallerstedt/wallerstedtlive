@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
+
+import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 export const runtime = "nodejs";
+void prisma;
 
 const COVER_CACHE_TTL_MS = 60 * 60 * 1000;
 const coverCacheBySpotifyId = new Map<string, { coverUrl: string; expiresAt: number }>();

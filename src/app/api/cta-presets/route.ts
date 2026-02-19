@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+
+import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 import { CtaPresetKey, getCtaPresets, updateCtaPreset } from "@/lib/cta-presets";
 
 export const runtime = "nodejs";
+void prisma;
 
 const ctaKeys: [CtaPresetKey, ...CtaPresetKey[]] = ["spotify", "follow", "share", "request", "support"];
 

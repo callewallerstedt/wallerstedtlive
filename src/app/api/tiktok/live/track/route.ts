@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+
+import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 import { updateConfig } from "@/lib/config";
 import { startLiveTrackingByUsername } from "@/lib/tiktok-live";
 
 export const runtime = "nodejs";
+void prisma;
 
 const trackSchema = z.object({
   username: z.string().trim().min(2),

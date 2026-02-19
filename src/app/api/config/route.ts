@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+
+import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 import { getOrCreateConfig, updateConfig } from "@/lib/config";
 
 export const runtime = "nodejs";
+void prisma;
 
 const configSchema = z.object({
   tiktokHandle: z.string().trim().optional(),

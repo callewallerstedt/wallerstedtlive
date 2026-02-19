@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 
 import { OverlayGoalsState, StreamOverlayState } from "@/lib/types";
@@ -483,6 +484,25 @@ export function StreamOverlay() {
                         />
                       </div>
                     ) : null}
+                  </div>
+                </>
+              ) : state.mode === "spotify_cta" ? (
+                <>
+                  <div className="grid items-center gap-6 md:grid-cols-[1fr_auto]">
+                    <div>
+                      <h1 className="text-5xl leading-tight text-white md:text-7xl">{state.title || " "}</h1>
+                      <p className="mt-5 max-w-4xl whitespace-pre-line text-2xl leading-relaxed text-stone-100 md:text-4xl">{state.subtitle || " "}</p>
+                    </div>
+                    <div className="mx-auto w-36 md:mx-0 md:w-48">
+                      <Image
+                        src="/spotify.png"
+                        alt="Spotify"
+                        width={192}
+                        height={192}
+                        className="h-auto w-full object-contain drop-shadow-[0_14px_30px_rgba(0,0,0,0.45)]"
+                        priority
+                      />
+                    </div>
                   </div>
                 </>
               ) : (

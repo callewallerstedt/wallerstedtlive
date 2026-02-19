@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { LiveDashboardState, OverlayGoalsState, StreamOverlayMode, StreamOverlayState } from "@/lib/types";
@@ -1739,15 +1740,28 @@ export function StreamControl() {
                             <button
                               key={key}
                               onClick={() => void showCtaPreset(key)}
-                              className="rounded-xl border p-4 text-left transition hover:brightness-110"
+                              className="rounded-xl border p-4 text-left transition hover:brightness-110 flex items-center gap-4"
                               style={{
                                 borderColor: `${accent}99`,
                                 background: `linear-gradient(135deg, ${accent}22 0%, rgba(12,12,12,0.95) 75%)`,
                               }}
                             >
-                              <p className="text-base font-semibold text-stone-100">{draft.label}</p>
-                              <p className="mt-2 text-lg leading-tight text-stone-100">{resolveCtaText(draft.title) || " "}</p>
-                              <p className="mt-2 text-sm text-stone-300">{resolveCtaText(draft.subtitle) || " "}</p>
+                              <div className="flex flex-1 flex-col gap-2">
+                                <p className="text-base font-semibold text-stone-100">{draft.label}</p>
+                                <p className="text-lg leading-tight text-stone-100">{resolveCtaText(draft.title) || " "}</p>
+                                <p className="text-sm text-stone-300">{resolveCtaText(draft.subtitle) || " "}</p>
+                              </div>
+                              {key === "spotify" && (
+                                <div className="flex h-full items-center">
+                                  <Image
+                                    src="/spotify.png"
+                                    alt="Spotify"
+                                    width={80}
+                                    height={80}
+                                    className="h-16 w-16 object-contain"
+                                  />
+                                </div>
+                              )}
                             </button>
                           );
                         }

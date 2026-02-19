@@ -1,0 +1,217 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum RecommendationStatus {
+  DRAFT
+  LIVE
+  TESTED
+  ARCHIVED
+}
+
+model AppConfig {
+  id                String   @id @default(cuid())
+  tiktokHandle      String?
+  spotifyArtistId   String?
+  spotifyArtistName String?  @default("Wallerstedt")
+  objective         String   @default("spotify_streams")
+  openAiApiKey      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model CtaPreset {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  label       String
+  title       String
+  subtitle    String
+  accentColor String   @default("#22c55e")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TikTokVideo {
+  id            String   @id @default(cuid())
+  platformId    String   @unique
+  description   String
+  videoUrl      String
+  coverUrl      String?
+  durationSec   Int?
+  postedAt      DateTime?
+  views         Int      @default(0)
+  likes         Int      @default(0)
+  comments      Int      @default(0)
+  shares        Int      @default(0)
+  saves         Int      @default(0)
+  musicTitle    String?
+  musicAuthor   String?
+  scrapedSource String?
+  scrapedAt     DateTime @default(now())
+}
+
+model TikTokLiveSession {
+  id                String            @id @default(cuid())
+  username          String
+  roomId            String?
+  source            String            @default("tiktok-live")
+  isLive            Boolean           @default(false)
+  statusCode        Int?
+  title             String?
+  startedAt         DateTime          @default(now())
+  endedAt           DateTime?
+  viewerCountStart  Int               @default(0)
+  viewerCountPeak   Int               @default(0)
+  viewerCountAvg    Float             @default(0)
+  likeCountLatest   Int               @default(0)
+  enterCountLatest  Int               @default(0)
+  totalCommentEvents Int              @default(0)
+  totalGiftEvents   Int               @default(0)
+  totalGiftDiamonds Int               @default(0)
+  warnings          String?
+  error             String?
+  samples           TikTokLiveSample[]
+  comments          TikTokLiveComment[]
+  gifts             TikTokLiveGift[]
+}
+
+model TikTokLiveSample {
+  id         String            @id @default(cuid())
+  sessionId  String
+  session    TikTokLiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  capturedAt DateTime          @default(now())
+  viewerCount Int              @default(0)
+  likeCount  Int               @default(0)
+  enterCount Int               @default(0)
+}
+
+model TikTokLiveComment {
+  id          String            @id @default(cuid())
+  sessionId   String
+  session     TikTokLiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt   DateTime          @default(now())
+  userUniqueId String?
+  nickname    String?
+  comment     String
+}
+
+model TikTokLiveGift {
+  id           String            @id @default(cuid())
+  sessionId    String
+  session      TikTokLiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime          @default(now())
+  userUniqueId String?
+  nickname     String?
+  giftName     String?
+  diamondCount Int               @default(0)
+  repeatCount  Int               @default(1)
+}
+
+model SpotifyTrack {
+  id           String   @id @default(cuid())
+  spotifyId    String   @unique
+  name         String
+  artistName   String?
+  albumName    String?
+  albumLabel   String?
+  publisher    String?
+  popularity   Int?
+  durationMs   Int      @default(0)
+  previewUrl   String?
+  externalUrl  String?
+  uri          String?
+  isrc         String?
+  releaseDate  String?
+  ownershipStatus String @default("AUTO")
+  isOwnedByYou Boolean   @default(false)
+  ownershipShare Float   @default(0.5)
+  syncedAt     DateTime @default(now())
+}
+
+model Recommendation {
+  id                   String               @id @default(cuid())
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  status               RecommendationStatus @default(DRAFT)
+  rank                 Int                  @default(0)
+  ideaTitle            String
+  postFormat           String
+  hook                 String
+  caption              String
+  shotPlan             String
+  editingNotes         String
+  patternKey           String?
+  rationale            String
+  confidence           Float                @default(0.5)
+  expectedSpotifyLift  Float                @default(0)
+  expectedViews        Int                  @default(0)
+  expectedSaveRate     Float                @default(0)
+  songSpotifyId        String?
+  songName             String?
+  songSegmentStartSec  Int?
+  songSegmentLengthSec Int?
+  promptSnapshot       Json?
+  score                Float?
+  experiments          ExperimentReport[]
+}
+
+model ExperimentReport {
+  id                String          @id @default(cuid())
+  createdAt         DateTime        @default(now())
+  recommendationId  String?
+  recommendation    Recommendation? @relation(fields: [recommendationId], references: [id], onDelete: SetNull)
+  screenshotPath    String?
+  notes             String?
+  hoursSincePost    Int?
+  views             Int?
+  likes             Int?
+  comments          Int?
+  shares            Int?
+  saves             Int?
+  watchTimeSec      Float?
+  completionRate    Float?
+  profileVisits     Int?
+  linkClicks        Int?
+  spotifyStreamsDelta Int?
+  analysisSummary   String?
+  analysisJson      Json?
+  patternKey        String?
+  score             Float?
+  insights          Insight[]
+}
+
+model Insight {
+  id                 String           @id @default(cuid())
+  createdAt          DateTime         @default(now())
+  sourceExperimentId String?
+  sourceExperiment   ExperimentReport? @relation(fields: [sourceExperimentId], references: [id], onDelete: SetNull)
+  title              String
+  detail             String
+  action             String
+  confidence         Float            @default(0.5)
+  impactScore        Float            @default(0)
+}
+
+model StrategyPattern {
+  key            String   @id
+  description    String
+  attempts       Int      @default(0)
+  avgScore       Float    @default(0)
+  avgSpotifyLift Float    @default(0)
+  avgViewRate    Float    @default(0)
+  lastUpdatedAt  DateTime @updatedAt
+}
+
+model SyncEvent {
+  id        String   @id @default(cuid())
+  provider  String
+  status    String
+  message   String?
+  meta      Json?
+  createdAt DateTime @default(now())
+}

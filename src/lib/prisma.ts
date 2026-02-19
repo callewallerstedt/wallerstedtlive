@@ -123,7 +123,11 @@ function ensureNeonServerlessParams(urlString: string): string {
 function resolveDatabaseUrl(): string | undefined {
   const existing = process.env.DATABASE_URL?.trim();
   const liveDirect = process.env.LIVE_DATABASE_POSTGRES_URL?.trim();
-  const candidate = existing || liveDirect;
+
+  const shouldPreferLiveDirect =
+    !!liveDirect && (!existing || existing.startsWith("file:"));
+
+  const candidate = shouldPreferLiveDirect ? liveDirect : existing || liveDirect;
   if (!candidate) {
     return undefined;
   }

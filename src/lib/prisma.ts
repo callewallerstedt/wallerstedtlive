@@ -86,9 +86,65 @@ function remapDevSqliteDatabaseUrl(): void {
 
 remapDevSqliteDatabaseUrl();
 
+function ensureNeonServerlessParams(urlString: string): string {
+  const trimmed = urlString.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return trimmed;
+  }
+
+  const protocol = parsed.protocol.replace(":", "").toLowerCase();
+  if (protocol !== "postgres" && protocol !== "postgresql") {
+    return trimmed;
+  }
+
+  const requiredParams: Record<string, string> = {
+    sslmode: "require",
+    pgbouncer: "false",
+    prepare_threshold: "0",
+    statement_timeout: "30000",
+  };
+
+  for (const [key, value] of Object.entries(requiredParams)) {
+    if (!parsed.searchParams.has(key)) {
+      parsed.searchParams.set(key, value);
+    }
+  }
+
+  return parsed.toString();
+}
+
+function resolveDatabaseUrl(): string | undefined {
+  const existing = process.env.DATABASE_URL?.trim();
+  const liveDirect = process.env.LIVE_DATABASE_POSTGRES_URL?.trim();
+  const candidate = existing || liveDirect;
+  if (!candidate) {
+    return undefined;
+  }
+  return ensureNeonServerlessParams(candidate);
+}
+
+const resolvedDatabaseUrl = resolveDatabaseUrl();
+if (resolvedDatabaseUrl) {
+  process.env.DATABASE_URL = resolvedDatabaseUrl;
+}
+
 export const prisma =
   global.prisma ||
   new PrismaClient({
+    datasources: resolvedDatabaseUrl
+      ? {
+          db: {
+            url: resolvedDatabaseUrl,
+          },
+        }
+      : undefined,
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 

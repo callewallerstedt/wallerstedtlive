@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { OverlayGoalsState, StreamOverlayState } from "@/lib/types";
 
@@ -69,10 +69,6 @@ function defaultGoalsState(): OverlayGoalsState {
     updatedAt: new Date(0).toISOString(),
     updatedBy: "system",
   };
-}
-
-function safeAccent(value: string) {
-  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#f59e0b";
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -418,13 +414,6 @@ export function StreamOverlay() {
     }
   }, [currentLikeCount, goals.autoLikeEnabled, goals.autoLikeEveryLikes, goals.autoLikeTriggerWithin]);
 
-  const style = useMemo(() => {
-    const accent = safeAccent(state.accentColor);
-    return {
-      "--overlay-accent": accent,
-    } as CSSProperties;
-  }, [state.accentColor]);
-
   const likeProgress = Math.min(100, (currentLikeCount / Math.max(1, goals.likeGoalTarget)) * 100);
   const donationProgress = Math.min(100, (currentDonationCount / Math.max(1, goals.donationGoalTarget)) * 100);
   const autoLikeWindow = Math.max(1, goals.autoLikeTriggerWithin);
@@ -450,14 +439,14 @@ export function StreamOverlay() {
   }
 
   return (
-    <main style={style} className={`relative min-h-screen overflow-hidden ${showMainCard ? "bg-stone-950" : "bg-transparent"}`}>
+    <main className={`relative min-h-screen overflow-hidden ${showMainCard ? "bg-stone-950" : "bg-transparent"}`}>
       {showMainCard ? (
         <>
           <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-90">
-            <div className="bg-orb-a absolute -left-24 top-[-110px] h-[26rem] w-[26rem] rounded-full bg-[var(--overlay-accent)]/25 blur-3xl" />
-            <div className="bg-orb-b absolute -right-20 bottom-[-130px] h-[30rem] w-[30rem] rounded-full bg-cyan-300/20 blur-3xl" />
-            <div className="bg-orb-c absolute left-1/2 top-[-150px] h-[20rem] w-[20rem] -translate-x-1/2 rounded-full bg-rose-300/12 blur-3xl" />
-            <div className="bg-glow absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.10),transparent_50%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.08),transparent_45%)]" />
+            <div className="bg-orb-a absolute -left-28 top-[-140px] h-[30rem] w-[30rem] rounded-full bg-[#7a4a2b]/34 blur-3xl" />
+            <div className="bg-orb-b absolute -right-28 bottom-[-170px] h-[34rem] w-[34rem] rounded-full bg-[#f2e6cc]/30 blur-3xl" />
+            <div className="bg-orb-c absolute left-1/2 top-[-170px] h-[24rem] w-[24rem] -translate-x-1/2 rounded-full bg-[#a97a53]/24 blur-3xl" />
+            <div className="bg-glow absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(242,230,204,0.28),transparent_52%),radial-gradient(circle_at_bottom_right,rgba(122,74,43,0.24),transparent_46%)]" />
           </div>
           <section className="relative flex min-h-screen items-center justify-center p-10">
             <div
@@ -574,13 +563,13 @@ export function StreamOverlay() {
 
       <style jsx>{`
         .bg-orb-a {
-          animation: orbFloatA 12s ease-in-out infinite alternate;
+          animation: orbFloatA 22s linear infinite;
         }
         .bg-orb-b {
-          animation: orbFloatB 15s ease-in-out infinite alternate;
+          animation: orbFloatB 26s linear infinite;
         }
         .bg-orb-c {
-          animation: orbFloatC 18s ease-in-out infinite alternate;
+          animation: orbFloatC 30s linear infinite;
         }
         .bg-glow {
           animation: glowPulse 9s ease-in-out infinite;
@@ -590,26 +579,53 @@ export function StreamOverlay() {
         }
         @keyframes orbFloatA {
           0% {
-            transform: translate3d(0, 0, 0);
+            transform: translate3d(0, 0, 0) scale(1);
+          }
+          25% {
+            transform: translate3d(220px, 80px, 0) scale(1.08);
+          }
+          50% {
+            transform: translate3d(380px, -24px, 0) scale(0.96);
+          }
+          75% {
+            transform: translate3d(140px, -190px, 0) scale(1.04);
           }
           100% {
-            transform: translate3d(40px, -24px, 0);
+            transform: translate3d(0, 0, 0) scale(1);
           }
         }
         @keyframes orbFloatB {
           0% {
-            transform: translate3d(0, 0, 0);
+            transform: translate3d(0, 0, 0) scale(1);
+          }
+          20% {
+            transform: translate3d(-170px, -30px, 0) scale(1.06);
+          }
+          45% {
+            transform: translate3d(-360px, -180px, 0) scale(0.95);
+          }
+          70% {
+            transform: translate3d(-120px, -320px, 0) scale(1.03);
           }
           100% {
-            transform: translate3d(-34px, 22px, 0);
+            transform: translate3d(0, 0, 0) scale(1);
           }
         }
         @keyframes orbFloatC {
           0% {
-            transform: translate3d(-50%, 0, 0);
+            transform: translate3d(-50%, 0, 0) scale(1);
+          }
+          30% {
+            transform: translate3d(calc(-50% + 180px), 120px, 0) scale(1.07);
+          }
+          60% {
+            transform: translate3d(calc(-50% - 120px), 250px, 0) scale(0.95);
+          }
+          85% {
+            transform: translate3d(calc(-50% - 270px), 50px, 0) scale(1.03);
           }
           100% {
-            transform: translate3d(calc(-50% + 16px), 20px, 0);
+            transform: translate3d(-50%, 0, 0) scale(1);
           }
         }
         @keyframes glowPulse {

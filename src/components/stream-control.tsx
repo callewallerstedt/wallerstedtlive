@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { LiveDashboardState, OverlayGoalsState, StreamOverlayMode, StreamOverlayState } from "@/lib/types";
 
@@ -433,11 +433,6 @@ export function StreamControl() {
   const usernameInputFocusedRef = useRef(false);
   const usernameRef = useRef("");
   const lastTrackedHandleRef = useRef("");
-  const panelTabsRef = useRef<HTMLDivElement | null>(null);
-  const panelTabsDraggingRef = useRef(false);
-  const panelTabsDragMovedRef = useRef(false);
-  const panelTabsDragStartXRef = useRef(0);
-  const panelTabsScrollLeftRef = useRef(0);
 
   const youtubePlayerSrc = useMemo(() => (youtubeResult ? toYouTubePlayerSrc(youtubeResult.embedUrl) : null), [youtubeResult]);
 
@@ -1070,40 +1065,7 @@ export function StreamControl() {
     }, 15000);
   }, [sendYoutubeCommand, stopAutoplayBoost]);
 
-  function handlePanelTabMouseDown(event: MouseEvent<HTMLDivElement>) {
-    const node = panelTabsRef.current;
-    if (!node) {
-      return;
-    }
-    panelTabsDraggingRef.current = true;
-    panelTabsDragMovedRef.current = false;
-    panelTabsDragStartXRef.current = event.pageX - node.offsetLeft;
-    panelTabsScrollLeftRef.current = node.scrollLeft;
-  }
-
-  function handlePanelTabMouseMove(event: MouseEvent<HTMLDivElement>) {
-    const node = panelTabsRef.current;
-    if (!node || !panelTabsDraggingRef.current) {
-      return;
-    }
-    event.preventDefault();
-    const x = event.pageX - node.offsetLeft;
-    const walk = x - panelTabsDragStartXRef.current;
-    if (Math.abs(walk) > 4) {
-      panelTabsDragMovedRef.current = true;
-    }
-    node.scrollLeft = panelTabsScrollLeftRef.current - walk;
-  }
-
-  function handlePanelTabMouseUpOrLeave() {
-    panelTabsDraggingRef.current = false;
-  }
-
   function handlePanelTabClick(panelId: PanelId) {
-    if (panelTabsDragMovedRef.current) {
-      panelTabsDragMovedRef.current = false;
-      return;
-    }
     setActivePanel(panelId);
   }
 
@@ -1742,12 +1704,7 @@ export function StreamControl() {
           <main className="min-h-0 rounded-2xl border border-stone-700 bg-stone-900 p-3 lg:col-span-2">
             <div className="flex h-full flex-col gap-3">
               <div
-                ref={panelTabsRef}
-                onMouseDown={handlePanelTabMouseDown}
-                onMouseMove={handlePanelTabMouseMove}
-                onMouseUp={handlePanelTabMouseUpOrLeave}
-                onMouseLeave={handlePanelTabMouseUpOrLeave}
-                className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none cursor-grab active:cursor-grabbing"
+                className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
               >
                 {panelButtons.map((panel) => (
                   <button
@@ -2187,7 +2144,7 @@ export function StreamControl() {
                       <p className="rounded-full border border-stone-700 bg-stone-900/80 px-3 py-1 text-xs text-stone-300">{viewerCurve.length} samples</p>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+                    <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
                       {monitorPrimaryStats.map((item) => (
                         <article key={item.label} className={`rounded-xl border p-3 ${item.tone === "live" ? "border-emerald-300/50 bg-emerald-400/10" : "border-stone-700 bg-stone-900/90"}`}>
                           <p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{item.label}</p>
@@ -2197,8 +2154,8 @@ export function StreamControl() {
                       ))}
                     </div>
 
-                    <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-                      <div className="grid min-h-0 grid-cols-1 gap-3">
+                    <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-4">
+                      <div className="grid min-h-0 grid-cols-1 gap-4">
                         <MonitorTrendChart
                           title="Viewer Curve"
                           summary={`Current ${currentViewerCount.toLocaleString()} | Min ${viewerMin.toLocaleString()} | Max ${viewerMax.toLocaleString()}`}
@@ -2233,7 +2190,7 @@ export function StreamControl() {
                         />
                       </div>
 
-                      <div className="grid grid-cols-1 gap-3 xl:grid-cols-1">
+                      <div className="grid grid-cols-1 gap-4">
                         <article className="rounded-xl border border-stone-700 bg-stone-900/90 p-3">
                           <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Audience Performance</p>
                           <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">

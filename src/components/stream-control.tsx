@@ -371,6 +371,8 @@ function toYouTubePlayerSrc(embedUrl: string): string {
     url.searchParams.set("rel", "0");
     url.searchParams.set("enablejsapi", "1");
     url.searchParams.set("playsinline", "1");
+    url.searchParams.set("mute", "1");
+    url.searchParams.set("controls", "1");
     if (typeof window !== "undefined") {
       url.searchParams.set("origin", window.location.origin);
     }
@@ -398,7 +400,6 @@ export function StreamControl() {
   const [isYoutubePlaying, setIsYoutubePlaying] = useState(false);
   const [selectedTrackId, setSelectedTrackId] = useState("");
   const [playerLabel, setPlayerLabel] = useState("");
-  const [isPlayerVisible, setIsPlayerVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelId>("player");
   const [lastTrackedHandle, setLastTrackedHandle] = useState("");
   const [ctaPresets, setCtaPresets] = useState<CtaPresetConfig[]>(defaultCtaPresets);
@@ -1638,7 +1639,6 @@ export function StreamControl() {
     return <div className="flex h-[100dvh] items-center justify-center bg-stone-950 text-stone-200">Loading stream control...</div>;
   }
 
-  const visiblePlayerFrame = activePanel === "player" && isPlayerVisible;
 
   return (
     <div className="min-h-[100dvh] overflow-hidden bg-stone-950 text-stone-100">
@@ -1763,14 +1763,9 @@ export function StreamControl() {
 
               <section className="relative min-h-0 flex-1 overflow-auto rounded-xl border border-stone-700 bg-stone-950/70 p-3">
                 <div className={activePanel === "player" ? "flex h-full flex-col" : "absolute left-[-9999px] top-0 h-px w-px overflow-hidden opacity-0"}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg text-stone-100">iPad Player</h2>
-                      <p className="mt-1 text-sm text-stone-300">{playerLabel || "Use Play on a comment to load YouTube."}</p>
-                    </div>
-                    <button onClick={() => setIsPlayerVisible((prev) => !prev)} disabled={!youtubeResult} className="rounded border border-stone-600 bg-stone-900 px-2 py-1 text-xs text-stone-200 disabled:opacity-40">
-                      {isPlayerVisible ? "Hide Player" : "Show Player"}
-                    </button>
+                  <div>
+                    <h2 className="text-lg text-stone-100">iPad Player</h2>
+                    <p className="mt-1 text-sm text-stone-300">{playerLabel || "Use Play on a comment to load YouTube."}</p>
                   </div>
 
                   <button onClick={toggleYoutubePlayback} disabled={!youtubeResult} className={`mt-3 w-full rounded-lg border px-5 py-3 text-base font-semibold transition ${isYoutubePlaying ? "border-amber-300/60 bg-amber-300/10 text-amber-100" : "border-emerald-300/60 bg-emerald-300/10 text-emerald-100"} disabled:opacity-40`}>
@@ -1780,13 +1775,7 @@ export function StreamControl() {
                   {isResolvingYoutube ? <p className="mt-2 text-xs text-amber-200">Loading YouTube...</p> : null}
                   {youtubeResult && youtubePlayerSrc ? (
                     <div className="mt-3 space-y-2">
-                      <div
-                        className={
-                          visiblePlayerFrame
-                            ? "aspect-video overflow-hidden rounded-lg border border-stone-700 bg-black"
-                            : "pointer-events-none fixed bottom-2 right-2 h-10 w-16 overflow-hidden opacity-[0.01]"
-                        }
-                      >
+                      <div className="aspect-video max-w-[360px] overflow-hidden rounded-lg border border-stone-700 bg-black/80">
                         <iframe
                           ref={youtubeFrameRef}
                           key={youtubeResult.videoId}
@@ -1800,7 +1789,6 @@ export function StreamControl() {
                           onLoad={handleYoutubeFrameLoad}
                         />
                       </div>
-                      {!isPlayerVisible ? <p className="text-xs text-stone-500">Player hidden (audio can still run).</p> : null}
                       <p className="text-xs text-stone-400">{youtubeResult.title}</p>
                     </div>
                   ) : <p className="mt-3 text-sm text-stone-500">No YouTube selection yet.</p>}

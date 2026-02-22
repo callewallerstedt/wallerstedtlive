@@ -49,6 +49,8 @@ Required for full functionality:
 - `PYTHON_PATH` (optional, defaults to `python`)
 - `TIKTOK_SESSION_ID` (optional but recommended for age-restricted LIVE streams)
 - `TIKTOK_TT_TARGET_IDC` (optional companion cookie for some accounts)
+- `TIKTOK_SIGN_API_KEY` (recommended on Vercel for stable LIVE connector access)
+- `TIKTOK_SERVERLESS_MIN_SAMPLE_INTERVAL_MS` (optional, defaults to `8000`)
 
 3. Create DB
 

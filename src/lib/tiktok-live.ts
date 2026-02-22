@@ -99,6 +99,13 @@ const activeSessionByUsername = new Map<string, string>();
 type PythonInvocation = { command: string; prefixArgs: string[] };
 let cachedPythonInvocation: PythonInvocation | null | undefined;
 const POLL_SOURCE = "tiktoklive-vercel-poll";
+const SERVERLESS_MIN_SAMPLE_INTERVAL_MS = (() => {
+  const raw = Number(process.env.TIKTOK_SERVERLESS_MIN_SAMPLE_INTERVAL_MS ?? 8000);
+  if (!Number.isFinite(raw)) {
+    return 8000;
+  }
+  return Math.max(2000, Math.round(raw));
+})();
 
 function normalizeUsername(username: string): string {
   return username.trim().replace(/^@/, "");
@@ -152,6 +159,15 @@ function toErrorMessage(error: unknown, fallback: string): string {
     return error.message.trim();
   }
   return fallback;
+}
+
+function getTikTokSignApiKey(): string | undefined {
+  const explicit = process.env.TIKTOK_SIGN_API_KEY?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  const legacy = process.env.EULERSTREAM_API_KEY?.trim();
+  return legacy || undefined;
 }
 
 function escapeRegExp(value: string): string {
@@ -417,10 +433,15 @@ async function fetchLiveSnapshotFromConnector(username: string): Promise<LiveSna
       disconnect: () => Promise<void>;
     };
   };
-  const connection = new mod.WebcastPushConnection(username, {
+  const signApiKey = getTikTokSignApiKey();
+  const connectionOptions: Record<string, unknown> = {
     enableExtendedGiftInfo: false,
     requestPollingIntervalMs: 1200,
-  });
+  };
+  if (signApiKey) {
+    connectionOptions.signApiKey = signApiKey;
+  }
+  const connection = new mod.WebcastPushConnection(username, connectionOptions);
 
   let roomId = "";
   let viewerCount = 0;
@@ -1087,17 +1108,23 @@ export async function fetchLiveSnapshotByUsername(rawUsername: string): Promise<
   }
 
   if (isServerlessRuntime()) {
-    let connectorError = "";
-    try {
-      return await fetchLiveSnapshotFromConnector(username);
-    } catch (error) {
-      connectorError = toErrorMessage(error, "Connector check failed.");
-    }
+    let webPageError = "";
     try {
       return await fetchLiveSnapshotFromWebPage(username);
     } catch (error) {
-      const webPageError = toErrorMessage(error, "Live page parse failed.");
-      throw new Error(`Live snapshot failed for @${username}. Connector: ${connectorError} | Web page: ${webPageError}`);
+      webPageError = toErrorMessage(error, "Live page parse failed.");
+    }
+    const signApiKey = getTikTokSignApiKey();
+    if (!signApiKey) {
+      throw new Error(
+        `Live snapshot failed for @${username}. Web page: ${webPageError} | Connector unavailable: set TIKTOK_SIGN_API_KEY in Vercel env.`
+      );
+    }
+    try {
+      return await fetchLiveSnapshotFromConnector(username);
+    } catch (error) {
+      const connectorError = toErrorMessage(error, "Connector check failed.");
+      throw new Error(`Live snapshot failed for @${username}. Web page: ${webPageError} | Connector: ${connectorError}`);
     }
   }
 
@@ -1421,6 +1448,23 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
     return;
   }
 
+  const [sampleCount, latestSample] = await Promise.all([
+    prisma.tikTokLiveSample.count({
+      where: { sessionId: activeSession.id },
+    }),
+    prisma.tikTokLiveSample.findFirst({
+      where: { sessionId: activeSession.id },
+      orderBy: { capturedAt: "desc" },
+      select: { capturedAt: true },
+    }),
+  ]);
+  if (latestSample) {
+    const elapsedMs = Date.now() - new Date(latestSample.capturedAt).getTime();
+    if (elapsedMs < SERVERLESS_MIN_SAMPLE_INTERVAL_MS) {
+      return;
+    }
+  }
+
   let snapshot: LiveSnapshot;
   try {
     snapshot = await fetchLiveSnapshotByUsername(activeSession.username);
@@ -1434,9 +1478,6 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
     });
     return;
   }
-  const sampleCount = await prisma.tikTokLiveSample.count({
-    where: { sessionId: activeSession.id },
-  });
   const nextSampleCount = sampleCount + 1;
   const avg = Number(
     ((activeSession.viewerCountAvg * sampleCount + snapshot.viewerCount) / Math.max(1, nextSampleCount)).toFixed(2)

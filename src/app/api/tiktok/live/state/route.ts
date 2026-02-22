@@ -22,15 +22,15 @@ export async function GET(request: Request) {
             take: 6,
             include: {
               samples: {
-                orderBy: { capturedAt: "asc" },
+                orderBy: { capturedAt: "desc" },
                 take: 220,
               },
               comments: {
-                orderBy: { createdAt: "asc" },
+                orderBy: { createdAt: "desc" },
                 take: 260,
               },
               gifts: {
-                orderBy: { createdAt: "asc" },
+                orderBy: { createdAt: "desc" },
                 take: 260,
               },
             },
@@ -44,15 +44,15 @@ export async function GET(request: Request) {
             take: 20,
             include: {
               samples: {
-                orderBy: { capturedAt: "asc" },
+                orderBy: { capturedAt: "desc" },
                 take: 600,
               },
               comments: {
-                orderBy: { createdAt: "asc" },
+                orderBy: { createdAt: "desc" },
                 take: 800,
               },
               gifts: {
-                orderBy: { createdAt: "asc" },
+                orderBy: { createdAt: "desc" },
                 take: 800,
               },
             },
@@ -68,11 +68,18 @@ export async function GET(request: Request) {
           }),
         ]);
 
+    const normalizedLiveSessions = liveSessions.map((session) => ({
+      ...session,
+      samples: [...session.samples].sort((a, b) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime()),
+      comments: [...session.comments].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+      gifts: [...session.gifts].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+    }));
+
     const payload: LiveDashboardState = {
       config,
       latestSyncEvents,
       spotifyTracks,
-      liveSessions,
+      liveSessions: normalizedLiveSessions,
     };
 
     return NextResponse.json(payload);

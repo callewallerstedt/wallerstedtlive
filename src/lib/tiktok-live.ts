@@ -1286,6 +1286,8 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
   const avg = Number(
     ((activeSession.viewerCountAvg * sampleCount + snapshot.viewerCount) / Math.max(1, nextSampleCount)).toFixed(2)
   );
+  const effectiveLikeCount = snapshot.likeCount > 0 ? snapshot.likeCount : activeSession.likeCountLatest;
+  const effectiveEnterCount = Math.max(activeSession.enterCountLatest, snapshot.enterCount);
   const capturedComments = snapshot.comments ?? [];
   const capturedGifts = snapshot.gifts ?? [];
   const capturedDiamonds = capturedGifts.reduce(
@@ -1298,8 +1300,8 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
       sessionId: activeSession.id,
       capturedAt: snapshot.fetchedAt,
       viewerCount: snapshot.viewerCount,
-      likeCount: snapshot.likeCount,
-      enterCount: snapshot.enterCount,
+      likeCount: effectiveLikeCount,
+      enterCount: effectiveEnterCount,
     },
   });
 
@@ -1338,8 +1340,8 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
       title: snapshot.title ?? activeSession.title ?? null,
       viewerCountPeak: Math.max(activeSession.viewerCountPeak, snapshot.viewerCount),
       viewerCountAvg: avg,
-      likeCountLatest: snapshot.likeCount > 0 ? snapshot.likeCount : activeSession.likeCountLatest,
-      enterCountLatest: Math.max(activeSession.enterCountLatest, snapshot.enterCount),
+      likeCountLatest: effectiveLikeCount,
+      enterCountLatest: effectiveEnterCount,
       totalCommentEvents: activeSession.totalCommentEvents + capturedComments.length,
       totalGiftEvents: activeSession.totalGiftEvents + capturedGifts.length,
       totalGiftDiamonds: activeSession.totalGiftDiamonds + capturedDiamonds,

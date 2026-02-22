@@ -597,7 +597,7 @@ export function StreamControl() {
 
   useEffect(() => {
     const overlayTimer = setInterval(() => {
-      if (document.hidden || isOverlayRefreshInFlightRef.current) {
+      if (isOverlayRefreshInFlightRef.current) {
         return;
       }
       isOverlayRefreshInFlightRef.current = true;
@@ -606,7 +606,7 @@ export function StreamControl() {
       });
     }, 1400);
     const liveTimer = setInterval(() => {
-      if (document.hidden || isLiveRefreshInFlightRef.current) {
+      if (isLiveRefreshInFlightRef.current) {
         return;
       }
       isLiveRefreshInFlightRef.current = true;
@@ -615,7 +615,7 @@ export function StreamControl() {
       });
     }, 1800);
     const goalsTimer = setInterval(() => {
-      if (document.hidden || isGoalsRefreshInFlightRef.current) {
+      if (isGoalsRefreshInFlightRef.current) {
         return;
       }
       isGoalsRefreshInFlightRef.current = true;

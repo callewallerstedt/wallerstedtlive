@@ -255,7 +255,7 @@ function MonitorTrendChart({ title, summary, points, strokeColor, gradientId, va
     : null;
 
   return (
-    <article className="rounded-xl border border-stone-700 bg-stone-900/95 p-3">
+    <article className="relative z-10 isolate rounded-xl border border-stone-700 bg-stone-900/95 p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-stone-500">{title}</p>
@@ -1592,24 +1592,25 @@ export function StreamControl() {
           </button>
         </div>
 
-        {!isFocusMode ? (
-          <section className="rounded-xl border border-stone-700 bg-stone-900/95 px-3 py-2">
-            <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">time {liveClockLabel}</span>
-              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">live {sessionDurationLabel}</span>
-              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">viewers {currentViewerCount.toLocaleString()}</span>
-              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">likes {currentLikeCount.toLocaleString()}</span>
-              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">diamonds {currentDonationCount.toLocaleString()}</span>
-              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">~SEK {donationSek.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-              {quickSnapshot ? (
-                <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-300">
-                  snap {quickSnapshot.isLive ? "LIVE" : "off"} v{quickSnapshot.viewerCount.toLocaleString()}
-                </span>
-              ) : null}
-              <a href="/stream-overlay" target="_blank" rel="noreferrer" className="ml-auto rounded-lg border border-sky-300/60 bg-sky-400/10 px-3 py-1.5 text-xs text-sky-100">
-                Overlay
-              </a>
-            </div>
+        <section className="rounded-xl border border-stone-700 bg-stone-900/95 px-3 py-2">
+          <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">time {liveClockLabel}</span>
+            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">live {sessionDurationLabel}</span>
+            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">viewers {currentViewerCount.toLocaleString()}</span>
+            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">likes {currentLikeCount.toLocaleString()}</span>
+            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">diamonds {currentDonationCount.toLocaleString()}</span>
+            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">~SEK {donationSek.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+            {quickSnapshot ? (
+              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-300">
+                snap {quickSnapshot.isLive ? "LIVE" : "off"} v{quickSnapshot.viewerCount.toLocaleString()}
+              </span>
+            ) : null}
+            <a href="/stream-overlay" target="_blank" rel="noreferrer" className="ml-auto rounded-lg border border-sky-300/60 bg-sky-400/10 px-3 py-1.5 text-xs text-sky-100">
+              Overlay
+            </a>
+          </div>
+
+          {!isFocusMode ? (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <input
                 value={username}
@@ -1641,19 +1642,14 @@ export function StreamControl() {
                 overlay: <span className="text-stone-200">{overlayState.mode}</span> | {formatDateTime(overlayState.updatedAt)}
               </span>
             </div>
-            {toast ? (
-              <p className={`mt-2 rounded-lg px-3 py-1 text-xs ${toast.type === "error" ? "bg-red-300/10 text-red-200" : toast.type === "success" ? "bg-emerald-300/10 text-emerald-200" : "bg-amber-300/10 text-amber-200"}`}>
-                {toast.text}
-              </p>
-            ) : null}
-          </section>
-        ) : (
-          toast ? (
-            <p className={`rounded-lg px-3 py-2 text-xs ${toast.type === "error" ? "bg-red-300/10 text-red-200" : toast.type === "success" ? "bg-emerald-300/10 text-emerald-200" : "bg-amber-300/10 text-amber-200"}`}>
+          ) : null}
+
+          {toast ? (
+            <p className={`mt-2 rounded-lg px-3 py-1 text-xs ${toast.type === "error" ? "bg-red-300/10 text-red-200" : toast.type === "success" ? "bg-emerald-300/10 text-emerald-200" : "bg-amber-300/10 text-amber-200"}`}>
               {toast.text}
             </p>
-          ) : null
-        )}
+          ) : null}
+        </section>
 
         <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-3">
           <aside className="min-h-0 max-h-[36dvh] rounded-2xl border border-stone-700 bg-stone-900 p-3 lg:max-h-none lg:col-span-1">
@@ -2154,7 +2150,7 @@ export function StreamControl() {
                     </div>
 
                     <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-                      <div className="grid min-h-0 grid-cols-1 gap-3">
+                      <div className="relative z-10 grid min-h-0 grid-cols-1 gap-3">
                         <MonitorTrendChart
                           title="Viewer Curve"
                           summary={`Current ${currentViewerCount.toLocaleString()} | Min ${viewerMin.toLocaleString()} | Max ${viewerMax.toLocaleString()}`}
@@ -2189,7 +2185,7 @@ export function StreamControl() {
                         />
                       </div>
 
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1">
+                      <div className="relative z-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1">
                         <article className="rounded-xl border border-stone-700 bg-stone-900/90 p-3">
                           <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Audience Performance</p>
                           <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">

@@ -257,7 +257,7 @@ export function LiveDashboard() {
   async function loadState() {
     setIsLoading(true);
     try {
-      const response = await fetch("/api/tiktok/live/state", { cache: "no-store" });
+      const response = await fetch("/api/tiktok/live/state?runtime=1", { cache: "no-store" });
       const data = (await response.json()) as LiveDashboardState | { error: string };
       if (!response.ok || "error" in data) {
         throw new Error("error" in data ? data.error : "Failed to load live data");
@@ -278,7 +278,7 @@ export function LiveDashboard() {
 
   async function refreshStateSilently() {
     try {
-      const response = await fetch("/api/tiktok/live/state", { cache: "no-store" });
+      const response = await fetch("/api/tiktok/live/state?runtime=1", { cache: "no-store" });
       const data = (await response.json()) as LiveDashboardState | { error: string };
       if (!response.ok || "error" in data) {
         return;

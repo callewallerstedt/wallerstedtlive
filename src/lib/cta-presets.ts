@@ -109,6 +109,7 @@ type UpdateCtaPresetInput = {
 
 export async function updateCtaPreset(input: UpdateCtaPresetInput): Promise<CtaPreset> {
   const defaults = defaultByKey(input.key);
+  const hasSubtitle = Object.prototype.hasOwnProperty.call(input, "subtitle");
 
   const label = sanitizeText(input.label, 40);
   const title = sanitizeText(input.title, 140);
@@ -120,7 +121,7 @@ export async function updateCtaPreset(input: UpdateCtaPresetInput): Promise<CtaP
     update: {
       ...(label ? { label } : {}),
       ...(title ? { title } : {}),
-      ...(subtitle ? { subtitle } : {}),
+      ...(hasSubtitle ? { subtitle } : {}),
       accentColor,
     },
     create: {

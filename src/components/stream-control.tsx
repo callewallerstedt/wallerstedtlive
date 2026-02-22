@@ -46,6 +46,9 @@ const defaultCtaPresets: CtaPresetConfig[] = [
 ];
 
 const DIAMOND_TO_SEK_RATE = 0.055;
+const MONITOR_CHART_WIDTH = 760;
+const MONITOR_CHART_HEIGHT = 190;
+const MONITOR_CHART_PADDING = 20;
 
 function defaultCtaPresetByKey(key: CtaPresetKey): CtaPresetConfig {
   const preset = defaultCtaPresets.find((item) => item.key === key);
@@ -88,6 +91,13 @@ function tokenize(value: string): string[] {
 function formatDateTime(value: string | Date): string {
   const date = value instanceof Date ? value : new Date(value);
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function formatCompactNumber(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -191,6 +201,17 @@ function pointsToChartCoords(points: ChartPoint[], width: number, height: number
     const y = height - padding - (point.value / maxValue) * innerHeight;
     return { ...point, x, y };
   });
+}
+
+function pointsToAreaPath(points: ChartPlotPoint[], height: number, padding: number): string {
+  if (points.length === 0) {
+    return "";
+  }
+  const baseY = height - padding;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const lineSegments = points.map((point) => `L ${point.x} ${point.y}`).join(" ");
+  return `M ${first.x} ${baseY} ${lineSegments} L ${last.x} ${baseY} Z`;
 }
 
 function findTrackForComment(comment: string, tracks: LiveDashboardState["spotifyTracks"]) {
@@ -653,8 +674,46 @@ export function StreamControl() {
       .map((sample) => ({ label: formatDateTime(sample.capturedAt), value: sample.viewerCount }));
   }, [activeSession]);
 
-  const viewerPolyline = useMemo(() => pointsToPolyline(viewerCurve, 760, 190, 20), [viewerCurve]);
-  const viewerChartPoints = useMemo(() => pointsToChartCoords(viewerCurve, 760, 190, 20), [viewerCurve]);
+  const viewerPolyline = useMemo(
+    () => pointsToPolyline(viewerCurve, MONITOR_CHART_WIDTH, MONITOR_CHART_HEIGHT, MONITOR_CHART_PADDING),
+    [viewerCurve]
+  );
+  const viewerChartPoints = useMemo(
+    () => pointsToChartCoords(viewerCurve, MONITOR_CHART_WIDTH, MONITOR_CHART_HEIGHT, MONITOR_CHART_PADDING),
+    [viewerCurve]
+  );
+  const viewerAreaPath = useMemo(
+    () => pointsToAreaPath(viewerChartPoints, MONITOR_CHART_HEIGHT, MONITOR_CHART_PADDING),
+    [viewerChartPoints]
+  );
+  const viewerMax = useMemo(() => {
+    if (viewerCurve.length === 0) {
+      return 0;
+    }
+    return Math.max(...viewerCurve.map((point) => point.value));
+  }, [viewerCurve]);
+  const viewerMin = useMemo(() => {
+    if (viewerCurve.length === 0) {
+      return 0;
+    }
+    return Math.min(...viewerCurve.map((point) => point.value));
+  }, [viewerCurve]);
+  const viewerNetChange = useMemo(() => {
+    if (viewerCurve.length < 2) {
+      return 0;
+    }
+    return viewerCurve[viewerCurve.length - 1].value - viewerCurve[0].value;
+  }, [viewerCurve]);
+  const viewerGridLines = useMemo(() => {
+    const maxValue = Math.max(1, viewerMax);
+    return [1, 0.75, 0.5, 0.25, 0].map((ratio) => {
+      const y = MONITOR_CHART_PADDING + (1 - ratio) * (MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING * 2);
+      return {
+        y,
+        value: Math.round(maxValue * ratio),
+      };
+    });
+  }, [viewerMax]);
 
   useEffect(() => {
     if (!hoveredViewerPoint) {
@@ -709,9 +768,38 @@ export function StreamControl() {
     const minutes = rounded % 60;
     return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
   }, [sessionDurationMinutes]);
+  const isSessionLive = Boolean(activeSession && !activeSession.endedAt);
+  const currentViewerCount = viewerCurve[viewerCurve.length - 1]?.value ?? activeSession?.viewerCountPeak ?? 0;
+  const monitorPrimaryStats: Array<{ label: string; value: string; hint: string; tone?: "live" | "neutral" }> = [
+    { label: "Status", value: isSessionLive ? "LIVE" : "Idle", hint: isSessionLive ? "Collecting now" : "No active session", tone: isSessionLive ? "live" : "neutral" },
+    { label: "Duration", value: sessionDurationLabel, hint: "Current session length" },
+    { label: "Viewers Now", value: currentViewerCount.toLocaleString(), hint: `Peak ${activeSession?.viewerCountPeak.toLocaleString() ?? "0"}` },
+    { label: "Net Change", value: `${viewerNetChange >= 0 ? "+" : ""}${viewerNetChange.toLocaleString()}`, hint: "From first sample" },
+  ];
+  const monitorPerformanceStats: Array<{ label: string; value: string }> = [
+    { label: "Start Viewers", value: activeSession?.viewerCountStart.toLocaleString() ?? "0" },
+    { label: "Average Viewers", value: monitorStats.avgViewers.toLocaleString() },
+    { label: "Peak Viewers", value: activeSession?.viewerCountPeak.toLocaleString() ?? "0" },
+    { label: "Peak Gain", value: monitorStats.peakGain.toLocaleString() },
+    { label: "Viewer Min", value: viewerMin.toLocaleString() },
+    { label: "Viewer Max", value: viewerMax.toLocaleString() },
+  ];
+  const monitorEngagementStats: Array<{ label: string; value: string }> = [
+    { label: "Likes", value: activeSession?.likeCountLatest.toLocaleString() ?? "0" },
+    { label: "Likes / Min", value: monitorStats.likesPerMinute.toFixed(1) },
+    { label: "Enters", value: activeSession?.enterCountLatest.toLocaleString() ?? "0" },
+    { label: "Enters / Min", value: monitorStats.entersPerMinute.toFixed(1) },
+    { label: "Comments", value: activeSession?.totalCommentEvents.toLocaleString() ?? "0" },
+    { label: "Comments / Min", value: monitorStats.commentsPerMinute.toFixed(1) },
+    { label: "Gift Events", value: activeSession?.totalGiftEvents.toLocaleString() ?? "0" },
+    { label: "Gifts / Min", value: monitorStats.giftsPerMinute.toFixed(2) },
+    { label: "Diamonds", value: activeSession?.totalGiftDiamonds.toLocaleString() ?? "0" },
+    { label: "Diamonds / Min", value: monitorStats.diamondsPerMinute.toFixed(1) },
+    { label: "Comment Rate", value: `${monitorStats.commentToEnterPct.toFixed(1)}%` },
+    { label: "Gift Conversion", value: `${monitorStats.giftToEnterPct.toFixed(1)}%` },
+  ];
 
   const currentLikeCount = activeSession?.likeCountLatest ?? 0;
-  const currentViewerCount = activeSession?.samples[activeSession.samples.length - 1]?.viewerCount ?? activeSession?.viewerCountPeak ?? 0;
   const currentDonationCount = activeSession?.totalGiftDiamonds ?? 0;
   const donationSek = currentDonationCount * DIAMOND_TO_SEK_RATE;
   const liveClockLabel = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -1311,10 +1399,10 @@ export function StreamControl() {
   const visiblePlayerFrame = activePanel === "player" && isPlayerVisible;
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-stone-950 text-stone-100">
-      <div className="mx-auto flex h-full w-full max-w-[1680px] flex-col gap-3 p-3 md:p-4">
+    <div className="min-h-[100dvh] overflow-hidden bg-stone-950 text-stone-100">
+      <div className="mx-auto flex h-[100dvh] w-full max-w-[1680px] flex-col gap-3 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-4">
         <section className="rounded-xl border border-stone-700 bg-stone-900/95 px-3 py-2">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">time {liveClockLabel}</span>
             <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">live {sessionDurationLabel}</span>
             <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">viewers {currentViewerCount.toLocaleString()}</span>
@@ -1326,7 +1414,7 @@ export function StreamControl() {
                 snap {quickSnapshot.isLive ? "LIVE" : "off"} v{quickSnapshot.viewerCount.toLocaleString()}
               </span>
             ) : null}
-            <a href="/stream-overlay" target="_blank" rel="noreferrer" className="ml-auto rounded-lg border border-sky-300/60 bg-sky-400/10 px-2.5 py-1 text-xs text-sky-100">
+            <a href="/stream-overlay" target="_blank" rel="noreferrer" className="ml-auto rounded-lg border border-sky-300/60 bg-sky-400/10 px-3 py-1.5 text-xs text-sky-100">
               Overlay
             </a>
           </div>
@@ -1349,12 +1437,12 @@ export function StreamControl() {
                 void startTrackingIfChanged();
               }}
               placeholder="@username"
-              className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-1.5 text-sm text-stone-100"
+              className="min-h-10 rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-100"
             />
-            <button onClick={() => void startTracking()} disabled={isBusy} className="rounded-lg border border-emerald-300/60 bg-emerald-400/10 px-3 py-1.5 text-xs text-emerald-100 disabled:opacity-50">Start</button>
-            <button onClick={() => void stopTracking()} disabled={isBusy} className="rounded-lg border border-red-300/60 bg-red-400/10 px-3 py-1.5 text-xs text-red-100 disabled:opacity-50">Stop</button>
-            <button onClick={() => void checkLive()} disabled={isBusy} className="rounded-lg border border-stone-500 bg-stone-800 px-3 py-1.5 text-xs text-stone-100 disabled:opacity-50">Check</button>
-            <button onClick={() => void clearOverlay()} disabled={isBusy} className="rounded-lg border border-stone-600 bg-stone-900 px-3 py-1.5 text-xs text-stone-200 disabled:opacity-50">Clear</button>
+            <button onClick={() => void startTracking()} disabled={isBusy} className="min-h-10 rounded-lg border border-emerald-300/60 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-100 disabled:opacity-50">Start</button>
+            <button onClick={() => void stopTracking()} disabled={isBusy} className="min-h-10 rounded-lg border border-red-300/60 bg-red-400/10 px-3 py-2 text-xs text-red-100 disabled:opacity-50">Stop</button>
+            <button onClick={() => void checkLive()} disabled={isBusy} className="min-h-10 rounded-lg border border-stone-500 bg-stone-800 px-3 py-2 text-xs text-stone-100 disabled:opacity-50">Check</button>
+            <button onClick={() => void clearOverlay()} disabled={isBusy} className="min-h-10 rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-xs text-stone-200 disabled:opacity-50">Clear</button>
             <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">
               tracking {syncedTrackedHandle ? `@${syncedTrackedHandle}` : "none"}
             </span>
@@ -1369,8 +1457,8 @@ export function StreamControl() {
           ) : null}
         </section>
 
-        <section className="grid min-h-0 flex-1 gap-3 md:grid-cols-3">
-          <aside className="min-h-0 rounded-2xl border border-stone-700 bg-stone-900 p-3 md:col-span-1">
+        <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-3">
+          <aside className="min-h-0 max-h-[36dvh] rounded-2xl border border-stone-700 bg-stone-900 p-3 lg:max-h-none lg:col-span-1">
             <div className="flex h-full flex-col">
               <h2 className="text-lg text-stone-100">Live Comments</h2>
               <p className="mt-1 text-sm text-stone-400">Show updates overlay only. Play starts YouTube only.</p>
@@ -1397,11 +1485,15 @@ export function StreamControl() {
             </div>
           </aside>
 
-          <main className="min-h-0 rounded-2xl border border-stone-700 bg-stone-900 p-3 md:col-span-2">
+          <main className="min-h-0 rounded-2xl border border-stone-700 bg-stone-900 p-3 lg:col-span-2">
             <div className="flex h-full flex-col gap-3">
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
+              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {panelButtons.map((panel) => (
-                  <button key={panel.id} onClick={() => setActivePanel(panel.id)} className={`rounded-xl border px-3 py-3 text-left transition ${activePanel === panel.id ? "border-amber-300/60 bg-amber-300/10" : "border-stone-700 bg-stone-950 hover:border-stone-500"}`}>
+                  <button
+                    key={panel.id}
+                    onClick={() => setActivePanel(panel.id)}
+                    className={`min-h-14 min-w-[8.75rem] flex-1 rounded-xl border px-3 py-3 text-left transition md:min-w-[9.5rem] ${activePanel === panel.id ? "border-amber-300/60 bg-amber-300/10" : "border-stone-700 bg-stone-950 hover:border-stone-500"}`}
+                  >
                     <p className="text-sm font-semibold text-stone-100">{panel.label}</p>
                     <p className="mt-1 text-xs text-stone-400">{panel.hint}</p>
                   </button>
@@ -1838,70 +1930,117 @@ export function StreamControl() {
 
                 {activePanel === "monitor" ? (
                   <div className="flex h-full flex-col">
-                    <h2 className="text-lg text-stone-100">Live Monitor</h2>
-                    <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4">
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Status</p><p className="mt-1 text-lg text-stone-100">{activeSession && !activeSession.endedAt ? "LIVE" : "idle"}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Duration</p><p className="mt-1 text-lg text-stone-100">{sessionDurationLabel}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Start Viewers</p><p className="mt-1 text-lg text-stone-100">{activeSession?.viewerCountStart.toLocaleString() ?? "0"}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Avg Viewers</p><p className="mt-1 text-lg text-stone-100">{monitorStats.avgViewers.toLocaleString()}</p></article>
-
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Peak Viewers</p><p className="mt-1 text-lg text-stone-100">{activeSession?.viewerCountPeak.toLocaleString() ?? "0"}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Peak Gain</p><p className="mt-1 text-lg text-stone-100">{monitorStats.peakGain.toLocaleString()}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Likes</p><p className="mt-1 text-lg text-stone-100">{activeSession?.likeCountLatest.toLocaleString() ?? "0"}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Likes / Min</p><p className="mt-1 text-lg text-stone-100">{monitorStats.likesPerMinute.toFixed(1)}</p></article>
-
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Enters</p><p className="mt-1 text-lg text-stone-100">{activeSession?.enterCountLatest.toLocaleString() ?? "0"}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Enters / Min</p><p className="mt-1 text-lg text-stone-100">{monitorStats.entersPerMinute.toFixed(1)}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Comments</p><p className="mt-1 text-lg text-stone-100">{activeSession?.totalCommentEvents.toLocaleString() ?? "0"}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Comments / Min</p><p className="mt-1 text-lg text-stone-100">{monitorStats.commentsPerMinute.toFixed(1)}</p></article>
-
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Gift Events</p><p className="mt-1 text-lg text-stone-100">{activeSession?.totalGiftEvents.toLocaleString() ?? "0"}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Gifts / Min</p><p className="mt-1 text-lg text-stone-100">{monitorStats.giftsPerMinute.toFixed(2)}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Diamonds</p><p className="mt-1 text-lg text-stone-100">{activeSession?.totalGiftDiamonds.toLocaleString() ?? "0"}</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Diamonds / Min</p><p className="mt-1 text-lg text-stone-100">{monitorStats.diamondsPerMinute.toFixed(1)}</p></article>
-
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Comment Rate</p><p className="mt-1 text-lg text-stone-100">{monitorStats.commentToEnterPct.toFixed(1)}%</p></article>
-                      <article className="rounded-lg border border-stone-700 bg-stone-900 p-2"><p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Gift Conversion</p><p className="mt-1 text-lg text-stone-100">{monitorStats.giftToEnterPct.toFixed(1)}%</p></article>
-                    </div>
-                    <div className="mt-3 min-h-0 flex-1 rounded-xl border border-stone-700 bg-stone-900 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">Viewer Curve</p>
-                        {hoveredViewerPoint ? (
-                          <p className="text-xs text-amber-200">
-                            {hoveredViewerPoint.label} | {hoveredViewerPoint.value.toLocaleString()} viewers
-                          </p>
-                        ) : (
-                          <p className="text-xs text-stone-500">Tap/hover points for values</p>
-                        )}
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h2 className="text-lg text-stone-100">Live Monitor</h2>
+                        <p className="mt-1 text-xs text-stone-500">iPad optimized: cleaner hierarchy, denser data, faster reads.</p>
                       </div>
-                      {viewerCurve.length === 0 ? <p className="mt-2 text-sm text-stone-400">No samples yet.</p> : (
-                        <svg viewBox="0 0 760 190" className="mt-2 h-[220px] w-full">
-                          <line x1="20" y1="170" x2="740" y2="170" stroke="#44403c" />
-                          <line x1="20" y1="20" x2="20" y2="170" stroke="#44403c" />
-                          <polyline fill="none" stroke="#facc15" strokeWidth="3" points={viewerPolyline} />
-                          {viewerChartPoints.map((point, index) => (
-                            <circle
-                              key={`${point.label}-${index}`}
-                              cx={point.x}
-                              cy={point.y}
-                              r="9"
-                              fill="transparent"
-                              onMouseEnter={() => setHoveredViewerPoint(point)}
-                              onMouseLeave={() => setHoveredViewerPoint(null)}
-                              onClick={() => setHoveredViewerPoint(point)}
-                            >
-                              <title>{`${point.label}: ${point.value.toLocaleString()} viewers`}</title>
-                            </circle>
-                          ))}
+                      <p className="rounded-full border border-stone-700 bg-stone-900/80 px-3 py-1 text-xs text-stone-300">{viewerCurve.length} samples</p>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+                      {monitorPrimaryStats.map((item) => (
+                        <article key={item.label} className={`rounded-xl border p-3 ${item.tone === "live" ? "border-emerald-300/50 bg-emerald-400/10" : "border-stone-700 bg-stone-900/90"}`}>
+                          <p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{item.label}</p>
+                          <p className={`mt-1 text-2xl font-semibold leading-none ${item.tone === "live" ? "text-emerald-100" : "text-stone-100"}`}>{item.value}</p>
+                          <p className="mt-1 text-xs text-stone-400">{item.hint}</p>
+                        </article>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+                      <article className="min-h-0 rounded-xl border border-stone-700 bg-stone-900/95 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-stone-500">Viewer Curve</p>
+                            <p className="mt-1 text-sm text-stone-300">Current {currentViewerCount.toLocaleString()} | Min {viewerMin.toLocaleString()} | Max {viewerMax.toLocaleString()}</p>
+                          </div>
                           {hoveredViewerPoint ? (
-                            <g transform={`translate(${Math.min(620, hoveredViewerPoint.x + 12)},${Math.max(22, hoveredViewerPoint.y - 28)})`}>
-                              <rect x="0" y="0" width="132" height="34" rx="6" fill="rgba(9,9,11,0.9)" stroke="#78716c" />
-                              <text x="8" y="14" fill="#fde68a" fontSize="10">{hoveredViewerPoint.label}</text>
-                              <text x="8" y="27" fill="#f5f5f4" fontSize="11">{hoveredViewerPoint.value.toLocaleString()} viewers</text>
-                            </g>
-                          ) : null}
-                        </svg>
-                      )}
+                            <p className="text-right text-xs text-amber-200">
+                              {hoveredViewerPoint.label}
+                              <br />
+                              {hoveredViewerPoint.value.toLocaleString()} viewers
+                            </p>
+                          ) : (
+                            <p className="text-xs text-stone-500">Tap points for exact values</p>
+                          )}
+                        </div>
+
+                        {viewerCurve.length === 0 ? (
+                          <p className="mt-4 text-sm text-stone-400">No samples yet.</p>
+                        ) : (
+                          <div className="mt-3 overflow-hidden rounded-lg border border-stone-700/70 bg-stone-950/70 p-2">
+                            <svg viewBox={`0 0 ${MONITOR_CHART_WIDTH} ${MONITOR_CHART_HEIGHT}`} className="h-[240px] w-full md:h-[300px]">
+                              <defs>
+                                <linearGradient id="viewerAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#facc15" stopOpacity="0.38" />
+                                  <stop offset="100%" stopColor="#facc15" stopOpacity="0.03" />
+                                </linearGradient>
+                              </defs>
+                              {viewerGridLines.map((line) => (
+                                <g key={line.y}>
+                                  <line x1={MONITOR_CHART_PADDING} y1={line.y} x2={MONITOR_CHART_WIDTH - MONITOR_CHART_PADDING} y2={line.y} stroke="#292524" strokeDasharray="4 6" />
+                                  <text x={MONITOR_CHART_PADDING + 6} y={line.y - 4} fill="#a8a29e" fontSize="9">
+                                    {formatCompactNumber(line.value)}
+                                  </text>
+                                </g>
+                              ))}
+                              <line x1={MONITOR_CHART_PADDING} y1={MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING} x2={MONITOR_CHART_WIDTH - MONITOR_CHART_PADDING} y2={MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING} stroke="#57534e" />
+                              <line x1={MONITOR_CHART_PADDING} y1={MONITOR_CHART_PADDING} x2={MONITOR_CHART_PADDING} y2={MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING} stroke="#57534e" />
+                              {viewerAreaPath ? <path d={viewerAreaPath} fill="url(#viewerAreaGradient)" /> : null}
+                              <polyline fill="none" stroke="#facc15" strokeWidth="3" points={viewerPolyline} />
+                              {viewerChartPoints.map((point, index) => (
+                                <circle
+                                  key={`${point.label}-${index}`}
+                                  cx={point.x}
+                                  cy={point.y}
+                                  r={8}
+                                  fill="transparent"
+                                  onMouseEnter={() => setHoveredViewerPoint(point)}
+                                  onMouseLeave={() => setHoveredViewerPoint(null)}
+                                  onTouchStart={() => setHoveredViewerPoint(point)}
+                                  onClick={() => setHoveredViewerPoint(point)}
+                                >
+                                  <title>{`${point.label}: ${point.value.toLocaleString()} viewers`}</title>
+                                </circle>
+                              ))}
+                              {hoveredViewerPoint ? (
+                                <g transform={`translate(${Math.min(615, hoveredViewerPoint.x + 10)},${Math.max(20, hoveredViewerPoint.y - 38)})`}>
+                                  <rect x="0" y="0" width="138" height="40" rx="8" fill="rgba(9,9,11,0.95)" stroke="#78716c" />
+                                  <text x="8" y="15" fill="#fde68a" fontSize="10">{hoveredViewerPoint.label}</text>
+                                  <text x="8" y="30" fill="#f5f5f4" fontSize="11">{hoveredViewerPoint.value.toLocaleString()} viewers</text>
+                                </g>
+                              ) : null}
+                            </svg>
+                          </div>
+                        )}
+                      </article>
+
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1">
+                        <article className="rounded-xl border border-stone-700 bg-stone-900/90 p-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Audience Performance</p>
+                          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+                            {monitorPerformanceStats.map((item) => (
+                              <div key={item.label}>
+                                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">{item.label}</p>
+                                <p className="mt-0.5 text-base font-semibold text-stone-100">{item.value}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </article>
+
+                        <article className="rounded-xl border border-stone-700 bg-stone-900/90 p-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Engagement And Conversion</p>
+                          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+                            {monitorEngagementStats.map((item) => (
+                              <div key={item.label}>
+                                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">{item.label}</p>
+                                <p className="mt-0.5 text-base font-semibold text-stone-100">{item.value}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </article>
+                      </div>
                     </div>
                   </div>
                 ) : null}

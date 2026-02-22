@@ -43,6 +43,17 @@ type GiftToast = {
 
 const NOW_PLAYING_CTA = "Find it on my Spotify!";
 
+function hexToRgba(hex: string, alpha: number): string {
+  const parsed = hex.trim();
+  if (!/^#[0-9a-fA-F]{6}$/.test(parsed)) {
+    return `rgba(245, 158, 11, ${alpha})`;
+  }
+  const r = Number.parseInt(parsed.slice(1, 3), 16);
+  const g = Number.parseInt(parsed.slice(3, 5), 16);
+  const b = Number.parseInt(parsed.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function defaultState(): StreamOverlayState {
   return {
     mode: "hidden",
@@ -433,6 +444,12 @@ export function StreamOverlay() {
   const hasAuxContent = Boolean(activeGift) || showGoals;
   const nowPlaying = parseNowPlayingSubtitle(state.subtitle);
   const nowPlayingArtistLabel = nowPlaying.artist ? `by ${nowPlaying.artist}` : "";
+  const accentColor = /^#[0-9a-fA-F]{6}$/.test(state.accentColor) ? state.accentColor : "#f59e0b";
+  const orbAColor = hexToRgba(accentColor, 0.34);
+  const orbBColor = hexToRgba(accentColor, 0.3);
+  const orbCColor = hexToRgba(accentColor, 0.24);
+  const glowTop = hexToRgba(accentColor, 0.28);
+  const glowBottom = hexToRgba(accentColor, 0.24);
 
   if (!showMainCard && !hasAuxContent) {
     return <div className="min-h-screen bg-transparent" />;
@@ -443,10 +460,15 @@ export function StreamOverlay() {
       {showMainCard ? (
         <>
           <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-90">
-            <div className="bg-orb-a absolute -left-28 top-[-140px] h-[30rem] w-[30rem] rounded-full bg-[#7a4a2b]/34 blur-3xl" />
-            <div className="bg-orb-b absolute -right-28 bottom-[-170px] h-[34rem] w-[34rem] rounded-full bg-[#f2e6cc]/30 blur-3xl" />
-            <div className="bg-orb-c absolute left-1/2 top-[-170px] h-[24rem] w-[24rem] -translate-x-1/2 rounded-full bg-[#a97a53]/24 blur-3xl" />
-            <div className="bg-glow absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(242,230,204,0.28),transparent_52%),radial-gradient(circle_at_bottom_right,rgba(122,74,43,0.24),transparent_46%)]" />
+            <div className="bg-orb-a absolute -left-28 top-[-140px] h-[30rem] w-[30rem] rounded-full blur-3xl" style={{ backgroundColor: orbAColor }} />
+            <div className="bg-orb-b absolute -right-28 bottom-[-170px] h-[34rem] w-[34rem] rounded-full blur-3xl" style={{ backgroundColor: orbBColor }} />
+            <div className="bg-orb-c absolute left-1/2 top-[-170px] h-[24rem] w-[24rem] -translate-x-1/2 rounded-full blur-3xl" style={{ backgroundColor: orbCColor }} />
+            <div
+              className="bg-glow absolute inset-0"
+              style={{
+                backgroundImage: `radial-gradient(circle_at_top_left,${glowTop},transparent 52%),radial-gradient(circle_at_bottom_right,${glowBottom},transparent 46%)`,
+              }}
+            />
           </div>
           <section className="relative flex min-h-screen items-center justify-center p-10">
             <div

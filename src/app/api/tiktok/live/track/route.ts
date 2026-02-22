@@ -32,6 +32,10 @@ export async function POST(req: Request) {
       forceRestartIfRunning: body.forceRestartIfRunning ?? true,
     });
 
+    if (!result.started) {
+      return NextResponse.json({ error: result.message }, { status: 400 });
+    }
+
     return NextResponse.json({ ok: true, trackedUsername: normalizedUsername, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Live tracking failed";

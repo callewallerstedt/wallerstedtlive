@@ -19,22 +19,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, snapshot });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Live check failed";
-    if (
-      /parsable live state data/i.test(message) ||
-      /did not include SIGI_STATE/i.test(message)
-    ) {
-      return NextResponse.json({
-        ok: true,
-        snapshot: {
-          isLive: false,
-          viewerCount: 0,
-          likeCount: 0,
-          enterCount: 0,
-        },
-        warning:
-          "TikTok is rate-limiting or blocking this check right now. Use Start to enter polling fallback mode, then wait for samples.",
-      });
-    }
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

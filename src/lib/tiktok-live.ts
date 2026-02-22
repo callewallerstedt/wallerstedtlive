@@ -147,6 +147,13 @@ function asNullableString(value: unknown): string | null {
   return normalized ? normalized : null;
 }
 
+function toErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+  return fallback;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -1080,10 +1087,17 @@ export async function fetchLiveSnapshotByUsername(rawUsername: string): Promise<
   }
 
   if (isServerlessRuntime()) {
+    let connectorError = "";
     try {
       return await fetchLiveSnapshotFromConnector(username);
-    } catch {
-      return fetchLiveSnapshotFromWebPage(username);
+    } catch (error) {
+      connectorError = toErrorMessage(error, "Connector check failed.");
+    }
+    try {
+      return await fetchLiveSnapshotFromWebPage(username);
+    } catch (error) {
+      const webPageError = toErrorMessage(error, "Live page parse failed.");
+      throw new Error(`Live snapshot failed for @${username}. Connector: ${connectorError} | Web page: ${webPageError}`);
     }
   }
 
@@ -1098,11 +1112,20 @@ export async function fetchLiveSnapshotByUsername(rawUsername: string): Promise<
       maxGifts: 0,
     });
     return normalizeSnapshotFromBridge(username, payload);
-  } catch {
+  } catch (bridgeError) {
+    const bridgeMessage = toErrorMessage(bridgeError, "Python bridge check failed.");
     try {
       return await fetchLiveSnapshotFromConnector(username);
-    } catch {
-      return fetchLiveSnapshotFromWebPage(username);
+    } catch (connectorError) {
+      const connectorMessage = toErrorMessage(connectorError, "Connector check failed.");
+      try {
+        return await fetchLiveSnapshotFromWebPage(username);
+      } catch (webPageError) {
+        const webPageMessage = toErrorMessage(webPageError, "Live page parse failed.");
+        throw new Error(
+          `Live snapshot failed for @${username}. Python: ${bridgeMessage} | Connector: ${connectorMessage} | Web page: ${webPageMessage}`
+        );
+      }
     }
   }
 }
@@ -1116,26 +1139,37 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
 
   let restartedExisting = false;
   if (input.forceRestartIfRunning) {
-    const otherActiveUsernames = Array.from(activeSessionByUsername.keys()).filter((value) => value !== username);
-    for (const activeUsername of otherActiveUsernames) {
+    const activeUsernames = Array.from(activeSessionByUsername.keys());
+    for (const activeUsername of activeUsernames) {
       const stopResult = stopLiveTrackingByUsername(activeUsername);
       if (stopResult.stopped) {
         restartedExisting = true;
       }
     }
 
-    const closedOtherSessions = await prisma.tikTokLiveSession.updateMany({
+    const closedOpenSessions = await prisma.tikTokLiveSession.updateMany({
       where: {
         endedAt: null,
-        username: { not: username },
       },
       data: {
         endedAt: new Date(),
         error: `Restarted by user (switched to @${username}).`,
       },
     });
-    if (closedOtherSessions.count > 0) {
+    if (closedOpenSessions.count > 0) {
       restartedExisting = true;
+    }
+  } else {
+    const existingAnySession = await prisma.tikTokLiveSession.findFirst({
+      where: { endedAt: null },
+      orderBy: { startedAt: "desc" },
+      select: { username: true },
+    });
+    if (existingAnySession) {
+      return {
+        started: false,
+        message: `Tracking is already running for @${existingAnySession.username}. Stop it first or restart with a new username.`,
+      };
     }
   }
 
@@ -1173,54 +1207,27 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
     }
   }
 
-  let snapshot: LiveSnapshot | null = null;
-  let usedFallbackSnapshot = false;
-  let snapshotFailureMessage = "";
+  let snapshot: LiveSnapshot;
   try {
     snapshot = await fetchLiveSnapshotByUsername(username);
   } catch (error) {
-    snapshotFailureMessage = error instanceof Error ? error.message : "Live check failed";
-    if (!serverlessMode) {
-      return {
-        started: false,
-        message: snapshotFailureMessage,
-      };
-    }
-    // In Vercel polling mode, TikTok may intermittently return anti-bot HTML.
-    // Start a provisional session and keep polling for real live stats.
-    snapshot = {
-      username,
-      isLive: true,
-      viewerCount: 0,
-      likeCount: 0,
-      enterCount: 0,
-      comments: [],
-      gifts: [],
-      fetchedAt: new Date(),
-    };
-    usedFallbackSnapshot = true;
+    throw new Error(toErrorMessage(error, "Live check failed"));
   }
 
-  if (snapshot && !snapshot.isLive) {
-    return {
-      started: false,
-      message: "This user is offline right now. Start again when they are live.",
-    };
+  if (!snapshot.isLive) {
+    throw new Error("This user appears offline right now. Start again when they are live.");
   }
 
   if (!serverlessMode && !getPythonInvocation()) {
-    return {
-      started: false,
-      message: getPythonNotFoundMessage(),
-    };
+    throw new Error(getPythonNotFoundMessage());
   }
 
   const durationRaw = Math.floor(input.durationSec);
   const durationSec = durationRaw <= 0 ? 0 : Math.max(15, Math.min(21600, durationRaw));
   const pollIntervalSec = clampSampleIntervalSec(input.pollIntervalSec, 0.5);
   const collectChatEvents = Boolean(input.collectChatEvents);
-  const initialComments = snapshot?.comments ?? [];
-  const initialGifts = snapshot?.gifts ?? [];
+  const initialComments = snapshot.comments ?? [];
+  const initialGifts = snapshot.gifts ?? [];
   const initialGiftDiamonds = initialGifts.reduce(
     (sum, gift) => sum + Math.max(0, gift.diamondCount) * Math.max(1, gift.repeatCount),
     0
@@ -1230,30 +1237,30 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
     data: {
       username,
       source: serverlessMode ? POLL_SOURCE : "tiktoklive-python-stream",
-      isLive: snapshot?.isLive ?? true,
-      statusCode: snapshot?.statusCode ?? 0,
-      roomId: snapshot?.roomId ?? null,
-      title: snapshot?.title ?? null,
-      viewerCountStart: snapshot?.viewerCount ?? 0,
-      viewerCountPeak: snapshot?.viewerCount ?? 0,
-      viewerCountAvg: snapshot?.viewerCount ?? 0,
-      likeCountLatest: snapshot?.likeCount ?? 0,
-      enterCountLatest: snapshot?.enterCount ?? 0,
+      isLive: snapshot.isLive,
+      statusCode: snapshot.statusCode ?? 0,
+      roomId: snapshot.roomId ?? null,
+      title: snapshot.title ?? null,
+      viewerCountStart: snapshot.viewerCount ?? 0,
+      viewerCountPeak: snapshot.viewerCount ?? 0,
+      viewerCountAvg: snapshot.viewerCount ?? 0,
+      likeCountLatest: snapshot.likeCount ?? 0,
+      enterCountLatest: snapshot.enterCount ?? 0,
       totalCommentEvents: initialComments.length,
       totalGiftEvents: initialGifts.length,
       totalGiftDiamonds: initialGiftDiamonds,
       warnings: null,
-      error: usedFallbackSnapshot ? snapshotFailureMessage || "Live page parse fallback in use." : null,
+      error: null,
     },
   });
 
   await prisma.tikTokLiveSample.create({
     data: {
       sessionId: session.id,
-      capturedAt: snapshot?.fetchedAt ?? new Date(),
-      viewerCount: snapshot?.viewerCount ?? 0,
-      likeCount: snapshot?.likeCount ?? 0,
-      enterCount: snapshot?.enterCount ?? 0,
+      capturedAt: snapshot.fetchedAt ?? new Date(),
+      viewerCount: snapshot.viewerCount ?? 0,
+      likeCount: snapshot.likeCount ?? 0,
+      enterCount: snapshot.enterCount ?? 0,
     },
   });
 
@@ -1287,11 +1294,7 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
     return {
       sessionId: session.id,
       started: true,
-      message: usedFallbackSnapshot
-        ? "Live tracking started (Vercel polling fallback mode). Data should appear as soon as TikTok returns parsable live state."
-        : restartedExisting
-          ? "Live tracker restarted (Vercel polling mode)."
-          : "Live tracking started (Vercel polling mode).",
+      message: restartedExisting ? "Live tracker restarted (Vercel polling mode)." : "Live tracking started (Vercel polling mode).",
     };
   }
 

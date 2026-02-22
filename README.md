@@ -107,6 +107,19 @@ Use this browser source/window in OBS or display capture.
 2. Set environment variables in Vercel project settings.
 3. Deploy as standard Next.js app.
 
+### Recommended for TikTokLive on Vercel (persistent worker)
+
+Run TikTokLive ingestion on a persistent machine and let Vercel proxy control calls to it.
+
+- Worker entry: `services/live-worker/index.mjs`
+- Vercel proxy env vars:
+  - `LIVE_WORKER_URL`
+  - `LIVE_WORKER_API_TOKEN`
+
+Free Cloudflare tunnel setup guide:
+
+- `docs/live-worker-cloudflare-free.md`
+
 ## Notes
 
 - TikTok scraping is unofficial and can break if TikTok/Tikwm changes formats.

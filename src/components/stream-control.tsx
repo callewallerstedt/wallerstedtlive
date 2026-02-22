@@ -420,6 +420,7 @@ export function StreamControl() {
   const [autoLikeSubtextInput, setAutoLikeSubtextInput] = useState("{remaining} likes to go");
   const [autoLikeShowProgressInput, setAutoLikeShowProgressInput] = useState(true);
   const [isSavingGoals, setIsSavingGoals] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
   const youtubeFrameRef = useRef<HTMLIFrameElement | null>(null);
   const autoplayIntervalRef = useRef<number | null>(null);
   const autoplayStopTimeoutRef = useRef<number | null>(null);
@@ -1565,61 +1566,78 @@ export function StreamControl() {
   return (
     <div className="min-h-[100dvh] overflow-hidden bg-stone-950 text-stone-100">
       <div className="mx-auto flex h-[100dvh] w-full max-w-[1680px] flex-col gap-3 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-4">
-        <section className="rounded-xl border border-stone-700 bg-stone-900/95 px-3 py-2">
-          <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">time {liveClockLabel}</span>
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">live {sessionDurationLabel}</span>
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">viewers {currentViewerCount.toLocaleString()}</span>
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">likes {currentLikeCount.toLocaleString()}</span>
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">diamonds {currentDonationCount.toLocaleString()}</span>
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">~SEK {donationSek.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-            {quickSnapshot ? (
-              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-300">
-                snap {quickSnapshot.isLive ? "LIVE" : "off"} v{quickSnapshot.viewerCount.toLocaleString()}
+        <div className="pointer-events-none fixed right-3 top-3 z-50">
+          <button
+            onClick={() => setIsFocusMode((prev) => !prev)}
+            className="pointer-events-auto min-h-10 rounded-lg border border-stone-500 bg-stone-900/95 px-3 py-2 text-xs text-stone-100 shadow-lg backdrop-blur"
+          >
+            {isFocusMode ? "Show Controls" : "Hide Controls"}
+          </button>
+        </div>
+
+        {!isFocusMode ? (
+          <section className="rounded-xl border border-stone-700 bg-stone-900/95 px-3 py-2">
+            <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">time {liveClockLabel}</span>
+              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">live {sessionDurationLabel}</span>
+              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">viewers {currentViewerCount.toLocaleString()}</span>
+              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">likes {currentLikeCount.toLocaleString()}</span>
+              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">diamonds {currentDonationCount.toLocaleString()}</span>
+              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">~SEK {donationSek.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+              {quickSnapshot ? (
+                <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-300">
+                  snap {quickSnapshot.isLive ? "LIVE" : "off"} v{quickSnapshot.viewerCount.toLocaleString()}
+                </span>
+              ) : null}
+              <a href="/stream-overlay" target="_blank" rel="noreferrer" className="ml-auto rounded-lg border border-sky-300/60 bg-sky-400/10 px-3 py-1.5 text-xs text-sky-100">
+                Overlay
+              </a>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                onFocus={() => {
+                  usernameInputFocusedRef.current = true;
+                }}
+                onBlur={() => {
+                  usernameInputFocusedRef.current = false;
+                  void startTrackingIfChanged();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") {
+                    return;
+                  }
+                  event.preventDefault();
+                  void startTrackingIfChanged();
+                }}
+                placeholder="@username"
+                className="min-h-10 rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+              />
+              <button onClick={() => void startTracking()} disabled={isBusy} className="min-h-10 rounded-lg border border-emerald-300/60 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-100 disabled:opacity-50">Start</button>
+              <button onClick={() => void stopTracking()} disabled={isBusy} className="min-h-10 rounded-lg border border-red-300/60 bg-red-400/10 px-3 py-2 text-xs text-red-100 disabled:opacity-50">Stop</button>
+              <button onClick={() => void checkLive()} disabled={isBusy} className="min-h-10 rounded-lg border border-stone-500 bg-stone-800 px-3 py-2 text-xs text-stone-100 disabled:opacity-50">Check</button>
+              <button onClick={() => void clearOverlay()} disabled={isBusy} className="min-h-10 rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-xs text-stone-200 disabled:opacity-50">Clear</button>
+              <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">
+                tracking {syncedTrackedHandle ? `@${syncedTrackedHandle}` : "none"}
               </span>
+              <span className="ml-auto text-xs text-stone-400">
+                overlay: <span className="text-stone-200">{overlayState.mode}</span> | {formatDateTime(overlayState.updatedAt)}
+              </span>
+            </div>
+            {toast ? (
+              <p className={`mt-2 rounded-lg px-3 py-1 text-xs ${toast.type === "error" ? "bg-red-300/10 text-red-200" : toast.type === "success" ? "bg-emerald-300/10 text-emerald-200" : "bg-amber-300/10 text-amber-200"}`}>
+                {toast.text}
+              </p>
             ) : null}
-            <a href="/stream-overlay" target="_blank" rel="noreferrer" className="ml-auto rounded-lg border border-sky-300/60 bg-sky-400/10 px-3 py-1.5 text-xs text-sky-100">
-              Overlay
-            </a>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <input
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              onFocus={() => {
-                usernameInputFocusedRef.current = true;
-              }}
-              onBlur={() => {
-                usernameInputFocusedRef.current = false;
-                void startTrackingIfChanged();
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter") {
-                  return;
-                }
-                event.preventDefault();
-                void startTrackingIfChanged();
-              }}
-              placeholder="@username"
-              className="min-h-10 rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-100"
-            />
-            <button onClick={() => void startTracking()} disabled={isBusy} className="min-h-10 rounded-lg border border-emerald-300/60 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-100 disabled:opacity-50">Start</button>
-            <button onClick={() => void stopTracking()} disabled={isBusy} className="min-h-10 rounded-lg border border-red-300/60 bg-red-400/10 px-3 py-2 text-xs text-red-100 disabled:opacity-50">Stop</button>
-            <button onClick={() => void checkLive()} disabled={isBusy} className="min-h-10 rounded-lg border border-stone-500 bg-stone-800 px-3 py-2 text-xs text-stone-100 disabled:opacity-50">Check</button>
-            <button onClick={() => void clearOverlay()} disabled={isBusy} className="min-h-10 rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-xs text-stone-200 disabled:opacity-50">Clear</button>
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">
-              tracking {syncedTrackedHandle ? `@${syncedTrackedHandle}` : "none"}
-            </span>
-            <span className="ml-auto text-xs text-stone-400">
-              overlay: <span className="text-stone-200">{overlayState.mode}</span> | {formatDateTime(overlayState.updatedAt)}
-            </span>
-          </div>
-          {toast ? (
-            <p className={`mt-2 rounded-lg px-3 py-1 text-xs ${toast.type === "error" ? "bg-red-300/10 text-red-200" : toast.type === "success" ? "bg-emerald-300/10 text-emerald-200" : "bg-amber-300/10 text-amber-200"}`}>
+          </section>
+        ) : (
+          toast ? (
+            <p className={`rounded-lg px-3 py-2 text-xs ${toast.type === "error" ? "bg-red-300/10 text-red-200" : toast.type === "success" ? "bg-emerald-300/10 text-emerald-200" : "bg-amber-300/10 text-amber-200"}`}>
               {toast.text}
             </p>
-          ) : null}
-        </section>
+          ) : null
+        )}
 
         <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-3">
           <aside className="min-h-0 max-h-[36dvh] rounded-2xl border border-stone-700 bg-stone-900 p-3 lg:max-h-none lg:col-span-1">
@@ -1651,25 +1669,27 @@ export function StreamControl() {
 
           <main className="min-h-0 rounded-2xl border border-stone-700 bg-stone-900 p-3 lg:col-span-2">
             <div className="flex h-full flex-col gap-3">
-              <div
-                ref={panelTabsRef}
-                onMouseDown={handlePanelTabMouseDown}
-                onMouseMove={handlePanelTabMouseMove}
-                onMouseUp={handlePanelTabMouseUpOrLeave}
-                onMouseLeave={handlePanelTabMouseUpOrLeave}
-                className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none cursor-grab active:cursor-grabbing"
-              >
-                {panelButtons.map((panel) => (
-                  <button
-                    key={panel.id}
-                    onClick={() => handlePanelTabClick(panel.id)}
-                    className={`min-h-14 min-w-[8.75rem] shrink-0 rounded-xl border px-3 py-3 text-left transition md:min-w-[9.5rem] ${activePanel === panel.id ? "border-amber-300/60 bg-amber-300/10" : "border-stone-700 bg-stone-950 hover:border-stone-500"}`}
-                  >
-                    <p className="text-sm font-semibold text-stone-100">{panel.label}</p>
-                    <p className="mt-1 text-xs text-stone-400">{panel.hint}</p>
-                  </button>
-                ))}
-              </div>
+              {!isFocusMode ? (
+                <div
+                  ref={panelTabsRef}
+                  onMouseDown={handlePanelTabMouseDown}
+                  onMouseMove={handlePanelTabMouseMove}
+                  onMouseUp={handlePanelTabMouseUpOrLeave}
+                  onMouseLeave={handlePanelTabMouseUpOrLeave}
+                  className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none cursor-grab active:cursor-grabbing"
+                >
+                  {panelButtons.map((panel) => (
+                    <button
+                      key={panel.id}
+                      onClick={() => handlePanelTabClick(panel.id)}
+                      className={`min-h-14 min-w-[8.75rem] shrink-0 rounded-xl border px-3 py-3 text-left transition md:min-w-[9.5rem] ${activePanel === panel.id ? "border-amber-300/60 bg-amber-300/10" : "border-stone-700 bg-stone-950 hover:border-stone-500"}`}
+                    >
+                      <p className="text-sm font-semibold text-stone-100">{panel.label}</p>
+                      <p className="mt-1 text-xs text-stone-400">{panel.hint}</p>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
               <section className="relative min-h-0 flex-1 overflow-auto rounded-xl border border-stone-700 bg-stone-950/70 p-3">
                 <div className={activePanel === "player" ? "flex h-full flex-col" : "absolute left-[-9999px] top-0 h-px w-px overflow-hidden opacity-0"}>

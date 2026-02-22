@@ -13,7 +13,7 @@ const items = [
 
 export function TopNav() {
   const pathname = usePathname();
-  if (pathname.startsWith("/stream-overlay")) {
+  if (pathname.startsWith("/stream-overlay") || pathname.startsWith("/stream-control")) {
     return null;
   }
 

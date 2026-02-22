@@ -430,6 +430,8 @@ export function StreamControl() {
   const isGoalsRefreshInFlightRef = useRef(false);
   const goalsInitializedRef = useRef(false);
   const usernameInputFocusedRef = useRef(false);
+  const usernameRef = useRef("");
+  const lastTrackedHandleRef = useRef("");
   const panelTabsRef = useRef<HTMLDivElement | null>(null);
   const panelTabsDraggingRef = useRef(false);
   const panelTabsDragMovedRef = useRef(false);
@@ -438,8 +440,18 @@ export function StreamControl() {
 
   const youtubePlayerSrc = useMemo(() => (youtubeResult ? toYouTubePlayerSrc(youtubeResult.embedUrl) : null), [youtubeResult]);
 
-  async function refreshLiveState(runtimeOnly = false) {
-    const response = await fetch(runtimeOnly ? "/api/tiktok/live/state?runtime=1" : "/api/tiktok/live/state", {
+  async function refreshLiveState(runtimeOnly = false, runtimeUsername?: string) {
+    const params = new URLSearchParams();
+    if (runtimeOnly) {
+      params.set("runtime", "1");
+      const normalizedRuntimeUsername = normalizeHandle(runtimeUsername ?? "");
+      if (normalizedRuntimeUsername) {
+        params.set("username", normalizedRuntimeUsername);
+      }
+    }
+    const query = params.toString();
+    const url = query ? `/api/tiktok/live/state?${query}` : "/api/tiktok/live/state";
+    const response = await fetch(url, {
       cache: "no-store",
     });
     const data = (await response.json()) as LiveDashboardState | { error?: string };
@@ -454,7 +466,8 @@ export function StreamControl() {
     }));
     const runningSession = parsed.liveSessions.find((session) => !session.endedAt);
     const syncedHandle = normalizeHandle(runningSession?.username ?? parsed.config.tiktokHandle ?? "");
-    if (syncedHandle) {
+    if (syncedHandle && !lastTrackedHandleRef.current) {
+      lastTrackedHandleRef.current = syncedHandle.toLowerCase();
       setLastTrackedHandle(syncedHandle.toLowerCase());
     }
     if (!usernameInputFocusedRef.current) {
@@ -463,7 +476,10 @@ export function StreamControl() {
           return prev || "";
         }
         const prevNormalized = normalizeHandle(prev);
-        return prevNormalized.toLowerCase() === syncedHandle.toLowerCase() ? prev : syncedHandle;
+        if (prevNormalized) {
+          return prev;
+        }
+        return syncedHandle;
       });
     }
   }
@@ -590,6 +606,15 @@ export function StreamControl() {
   }
 
   useEffect(() => {
+    usernameRef.current = normalizeHandle(username);
+  }, [username]);
+
+  useEffect(() => {
+    const normalized = normalizeHandle(lastTrackedHandle).toLowerCase();
+    lastTrackedHandleRef.current = normalized;
+  }, [lastTrackedHandle]);
+
+  useEffect(() => {
     Promise.all([refreshLiveState(false), refreshOverlayState(), refreshGoalsState(), refreshCtaPresets()]).catch((error: unknown) => {
       setToast({ type: "error", text: error instanceof Error ? error.message : "Failed to load stream control data" });
     });
@@ -610,7 +635,8 @@ export function StreamControl() {
         return;
       }
       isLiveRefreshInFlightRef.current = true;
-      refreshLiveState(true).catch(() => undefined).finally(() => {
+      const runtimeHint = lastTrackedHandleRef.current || usernameRef.current || undefined;
+      refreshLiveState(true, runtimeHint).catch(() => undefined).finally(() => {
         isLiveRefreshInFlightRef.current = false;
       });
     }, 1800);
@@ -1087,6 +1113,7 @@ export function StreamControl() {
       setToast({ type: "error", text: "Enter username first." });
       return;
     }
+    setUsername(handle);
     setIsBusy(true);
     try {
       const response = await fetch("/api/tiktok/live/track", {
@@ -1098,6 +1125,7 @@ export function StreamControl() {
       if (!response.ok) {
         throw new Error(data.error ?? "Start failed");
       }
+      lastTrackedHandleRef.current = handle.toLowerCase();
       setLastTrackedHandle(handle.toLowerCase());
       setToast({ type: data.started ? "success" : "info", text: data.message ?? "Tracking updated." });
       await refreshLiveState(false);
@@ -1106,17 +1134,6 @@ export function StreamControl() {
     } finally {
       setIsBusy(false);
     }
-  }
-
-  async function startTrackingIfChanged() {
-    const handle = normalizeHandle(username);
-    if (!handle) {
-      return;
-    }
-    if (handle.toLowerCase() === lastTrackedHandle || handle.toLowerCase() === syncedTrackedHandle) {
-      return;
-    }
-    await startTracking(handle);
   }
 
   async function stopTracking() {
@@ -1602,14 +1619,13 @@ export function StreamControl() {
                 }}
                 onBlur={() => {
                   usernameInputFocusedRef.current = false;
-                  void startTrackingIfChanged();
                 }}
                 onKeyDown={(event) => {
                   if (event.key !== "Enter") {
                     return;
                   }
                   event.preventDefault();
-                  void startTrackingIfChanged();
+                  void startTracking();
                 }}
                 placeholder="@username"
                 className="min-h-10 rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-100"

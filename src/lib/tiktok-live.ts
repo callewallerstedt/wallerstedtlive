@@ -217,6 +217,91 @@ function extractScriptJsonById(html: string, id: string): unknown | null {
   }
 }
 
+function extractJsonScriptsByType(html: string): unknown[] {
+  const pattern = /<script[^>]*type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const parsed: unknown[] = [];
+  for (const match of html.matchAll(pattern)) {
+    const raw = match[1];
+    if (!raw) {
+      continue;
+    }
+    try {
+      parsed.push(JSON.parse(raw));
+    } catch {
+      continue;
+    }
+  }
+  return parsed;
+}
+
+function findRecordDeep(
+  input: unknown,
+  predicate: (value: Record<string, unknown>) => boolean,
+  depth = 0,
+  seen = new Set<object>()
+): Record<string, unknown> | null {
+  const root = asRecord(input);
+  if (!root || depth > 8) {
+    return null;
+  }
+  if (seen.has(root)) {
+    return null;
+  }
+  seen.add(root);
+  if (predicate(root)) {
+    return root;
+  }
+  for (const nested of Object.values(root)) {
+    const found = findRecordDeep(nested, predicate, depth + 1, seen);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function toRoomIdentifier(value: Record<string, unknown>): string | undefined {
+  const candidates = [value.streamId, value.roomId, value.id_str, value.id];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return String(candidate);
+    }
+  }
+  return undefined;
+}
+
+function toLiveStatusCode(value: Record<string, unknown>, fallback?: number): number {
+  const status = toNumber(value.status);
+  if (status > 0) {
+    return status;
+  }
+  if (typeof fallback === "number" && Number.isFinite(fallback)) {
+    return fallback;
+  }
+  return 0;
+}
+
+function toLiveStats(value: Record<string, unknown>): Record<string, unknown> | null {
+  const directStats = asRecord(value.liveRoomStats);
+  if (directStats) {
+    return directStats;
+  }
+  return findRecordDeep(value, (record) => {
+    const hasViewer =
+      Object.prototype.hasOwnProperty.call(record, "userCount") ||
+      Object.prototype.hasOwnProperty.call(record, "user_count") ||
+      Object.prototype.hasOwnProperty.call(record, "viewerCount");
+    const hasEnter =
+      Object.prototype.hasOwnProperty.call(record, "enterCount") ||
+      Object.prototype.hasOwnProperty.call(record, "totalUser") ||
+      Object.prototype.hasOwnProperty.call(record, "total_user");
+    return hasViewer || hasEnter;
+  });
+}
+
 function snapshotFromParsedLiveRoot(username: string, parsed: unknown): LiveSnapshot | null {
   const root = asRecord(parsed);
   if (!root) {
@@ -225,26 +310,48 @@ function snapshotFromParsedLiveRoot(username: string, parsed: unknown): LiveSnap
 
   const liveRoomRoot = asRecord(root.LiveRoom);
   const liveRoomUserInfo = asRecord(liveRoomRoot?.liveRoomUserInfo);
-  const liveRoom = asRecord(liveRoomUserInfo?.liveRoom);
-  const liveRoomStats = asRecord(liveRoom?.liveRoomStats);
+  const currentRoomRoot = asRecord(root.CurrentRoom);
+  const liveRoom =
+    asRecord(liveRoomUserInfo?.liveRoom) ??
+    asRecord(liveRoomRoot?.liveRoom) ??
+    asRecord(currentRoomRoot?.liveRoom) ??
+    asRecord(currentRoomRoot) ??
+    findRecordDeep(root, (record) => {
+      const hasStatusField = Object.prototype.hasOwnProperty.call(record, "status");
+      const hasRoomId = Boolean(toRoomIdentifier(record));
+      const hasStats = Boolean(asRecord(record.liveRoomStats));
+      return hasStatusField && (hasRoomId || hasStats);
+    });
 
   if (!liveRoom) {
     return null;
   }
 
-  const status = toNumber(liveRoom.status);
-  const roomIdRaw = liveRoom.streamId;
+  const statusFallback = toNumber(liveRoomRoot?.liveRoomStatus);
+  const status = toLiveStatusCode(liveRoom, statusFallback > 0 ? statusFallback : undefined);
+  const roomId = toRoomIdentifier(liveRoom);
   const titleRaw = liveRoom.title;
+  const liveRoomStats = toLiveStats(liveRoom);
+  const viewerCount = Math.max(
+    0,
+    toNumber(liveRoomStats?.userCount ?? liveRoomStats?.user_count ?? liveRoomStats?.viewerCount)
+  );
+  const enterCount = Math.max(0, toNumber(liveRoomStats?.enterCount ?? liveRoomStats?.totalUser ?? liveRoomStats?.total_user));
+  const likeCount = Math.max(
+    0,
+    toNumber(liveRoomStats?.likeCount ?? liveRoomStats?.like_count ?? liveRoomStats?.totalLikeCount)
+  );
+  const inferredLive = viewerCount > 0 || Boolean(roomId);
 
   return {
     username,
-    roomId: typeof roomIdRaw === "string" && roomIdRaw.trim() ? roomIdRaw.trim() : undefined,
+    roomId,
     title: typeof titleRaw === "string" && titleRaw.trim() ? titleRaw.trim() : undefined,
     statusCode: status || undefined,
-    isLive: status === 2,
-    viewerCount: Math.max(0, toNumber(liveRoomStats?.userCount)),
-    likeCount: 0,
-    enterCount: Math.max(0, toNumber(liveRoomStats?.enterCount)),
+    isLive: status === 2 || (status === 0 && inferredLive),
+    viewerCount,
+    likeCount,
+    enterCount,
     comments: [],
     gifts: [],
     fetchedAt: new Date(),
@@ -255,6 +362,7 @@ function snapshotFromLooseHtmlSignals(username: string, html: string): LiveSnaps
   const statusMatch = html.match(/"status"\s*:\s*(\d+)/);
   const userCountMatch = html.match(/"userCount"\s*:\s*(\d+)/);
   const enterCountMatch = html.match(/"enterCount"\s*:\s*(\d+)/);
+  const likeCountMatch = html.match(/"likeCount"\s*:\s*(\d+)/);
   const streamIdMatch = html.match(/"streamId"\s*:\s*"([^"]+)"/);
   const titleMatch = html.match(/"title"\s*:\s*"([^"]+)"/);
   const pageTitleLive = /is\s+LIVE\s+-\s+TikTok\s+LIVE/i.test(html);
@@ -271,7 +379,7 @@ function snapshotFromLooseHtmlSignals(username: string, html: string): LiveSnaps
     statusCode: status || undefined,
     isLive: status === 2 || pageTitleLive,
     viewerCount: userCountMatch ? Math.max(0, Number(userCountMatch[1])) : 0,
-    likeCount: 0,
+    likeCount: likeCountMatch ? Math.max(0, Number(likeCountMatch[1])) : 0,
     enterCount: enterCountMatch ? Math.max(0, Number(enterCountMatch[1])) : 0,
     comments: [],
     gifts: [],
@@ -459,6 +567,14 @@ async function fetchLiveSnapshotFromWebPage(username: string): Promise<LiveSnaps
   const liveDetailSnapshot = snapshotFromParsedLiveRoot(username, liveDetail);
   if (liveDetailSnapshot) {
     return liveDetailSnapshot;
+  }
+
+  const genericJsonScripts = extractJsonScriptsByType(html);
+  for (const payload of genericJsonScripts) {
+    const scriptSnapshot = snapshotFromParsedLiveRoot(username, payload);
+    if (scriptSnapshot) {
+      return scriptSnapshot;
+    }
   }
 
   const looseSnapshot = snapshotFromLooseHtmlSignals(username, html);
@@ -999,6 +1115,30 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
   const serverlessMode = isServerlessRuntime();
 
   let restartedExisting = false;
+  if (input.forceRestartIfRunning) {
+    const otherActiveUsernames = Array.from(activeSessionByUsername.keys()).filter((value) => value !== username);
+    for (const activeUsername of otherActiveUsernames) {
+      const stopResult = stopLiveTrackingByUsername(activeUsername);
+      if (stopResult.stopped) {
+        restartedExisting = true;
+      }
+    }
+
+    const closedOtherSessions = await prisma.tikTokLiveSession.updateMany({
+      where: {
+        endedAt: null,
+        username: { not: username },
+      },
+      data: {
+        endedAt: new Date(),
+        error: `Restarted by user (switched to @${username}).`,
+      },
+    });
+    if (closedOtherSessions.count > 0) {
+      restartedExisting = true;
+    }
+  }
+
   const existingDbSession = await prisma.tikTokLiveSession.findFirst({
     where: { username, endedAt: null },
     orderBy: { startedAt: "desc" },
@@ -1278,7 +1418,19 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
     return;
   }
 
-  const snapshot = await fetchLiveSnapshotByUsername(activeSession.username);
+  let snapshot: LiveSnapshot;
+  try {
+    snapshot = await fetchLiveSnapshotByUsername(activeSession.username);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Live refresh failed.";
+    await prisma.tikTokLiveSession.update({
+      where: { id: activeSession.id },
+      data: {
+        error: message,
+      },
+    });
+    return;
+  }
   const sampleCount = await prisma.tikTokLiveSample.count({
     where: { sessionId: activeSession.id },
   });

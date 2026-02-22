@@ -6,14 +6,17 @@ import { refreshLiveTrackingSnapshot } from "@/lib/tiktok-live";
 import { LiveDashboardState } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const runtimeMode = url.searchParams.get("runtime") === "1";
+    const runtimeUsername = url.searchParams.get("username")?.trim().replace(/^@/, "") || undefined;
     const config = await getOrCreateConfig();
     if (runtimeMode) {
-      await refreshLiveTrackingSnapshot(config.tiktokHandle ?? undefined).catch(() => undefined);
+      await refreshLiveTrackingSnapshot(runtimeUsername ?? config.tiktokHandle ?? undefined).catch(() => undefined);
     }
     const [liveSessions, latestSyncEvents, spotifyTracks] = runtimeMode
       ? await Promise.all([
@@ -82,7 +85,11 @@ export async function GET(request: Request) {
       liveSessions: normalizedLiveSessions,
     };
 
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown live state API error";
     return NextResponse.json({ error: message }, { status: 500 });

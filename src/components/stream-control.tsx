@@ -214,6 +214,116 @@ function pointsToAreaPath(points: ChartPlotPoint[], height: number, padding: num
   return `M ${first.x} ${baseY} ${lineSegments} L ${last.x} ${baseY} Z`;
 }
 
+type MonitorTrendChartProps = {
+  title: string;
+  summary: string;
+  points: ChartPoint[];
+  strokeColor: string;
+  gradientId: string;
+  valueUnit: string;
+};
+
+function MonitorTrendChart({ title, summary, points, strokeColor, gradientId, valueUnit }: MonitorTrendChartProps) {
+  const [hoveredPoint, setHoveredPoint] = useState<ChartPlotPoint | null>(null);
+  const polyline = useMemo(
+    () => pointsToPolyline(points, MONITOR_CHART_WIDTH, MONITOR_CHART_HEIGHT, MONITOR_CHART_PADDING),
+    [points]
+  );
+  const chartPoints = useMemo(
+    () => pointsToChartCoords(points, MONITOR_CHART_WIDTH, MONITOR_CHART_HEIGHT, MONITOR_CHART_PADDING),
+    [points]
+  );
+  const areaPath = useMemo(
+    () => pointsToAreaPath(chartPoints, MONITOR_CHART_HEIGHT, MONITOR_CHART_PADDING),
+    [chartPoints]
+  );
+  const maxValue = useMemo(() => {
+    if (points.length === 0) {
+      return 0;
+    }
+    return Math.max(...points.map((point) => point.value));
+  }, [points]);
+  const gridLines = useMemo(() => {
+    const max = Math.max(1, maxValue);
+    return [1, 0.75, 0.5, 0.25, 0].map((ratio) => {
+      const y = MONITOR_CHART_PADDING + (1 - ratio) * (MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING * 2);
+      return { y, value: Math.round(max * ratio) };
+    });
+  }, [maxValue]);
+  const activeHoveredPoint = hoveredPoint && chartPoints.some((point) => point.label === hoveredPoint.label && point.value === hoveredPoint.value)
+    ? hoveredPoint
+    : null;
+
+  return (
+    <article className="rounded-xl border border-stone-700 bg-stone-900/95 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.2em] text-stone-500">{title}</p>
+          <p className="mt-1 text-sm text-stone-300">{summary}</p>
+        </div>
+        {activeHoveredPoint ? (
+          <p className="text-right text-xs text-amber-200">
+            {activeHoveredPoint.label}
+            <br />
+            {activeHoveredPoint.value.toLocaleString()} {valueUnit}
+          </p>
+        ) : (
+          <p className="text-xs text-stone-500">Tap points for exact values</p>
+        )}
+      </div>
+
+      {points.length === 0 ? (
+        <p className="mt-4 text-sm text-stone-400">No samples yet.</p>
+      ) : (
+        <div className="mt-3 overflow-hidden rounded-lg border border-stone-700/70 bg-stone-950/70 p-2">
+          <svg viewBox={`0 0 ${MONITOR_CHART_WIDTH} ${MONITOR_CHART_HEIGHT}`} className="h-[220px] w-full md:h-[260px]">
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={strokeColor} stopOpacity="0.35" />
+                <stop offset="100%" stopColor={strokeColor} stopOpacity="0.04" />
+              </linearGradient>
+            </defs>
+            {gridLines.map((line) => (
+              <g key={`${title}-${line.y}`}>
+                <line x1={MONITOR_CHART_PADDING} y1={line.y} x2={MONITOR_CHART_WIDTH - MONITOR_CHART_PADDING} y2={line.y} stroke="#292524" strokeDasharray="4 6" />
+                <text x={MONITOR_CHART_PADDING + 6} y={line.y - 4} fill="#a8a29e" fontSize="9">
+                  {formatCompactNumber(line.value)}
+                </text>
+              </g>
+            ))}
+            <line x1={MONITOR_CHART_PADDING} y1={MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING} x2={MONITOR_CHART_WIDTH - MONITOR_CHART_PADDING} y2={MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING} stroke="#57534e" />
+            <line x1={MONITOR_CHART_PADDING} y1={MONITOR_CHART_PADDING} x2={MONITOR_CHART_PADDING} y2={MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING} stroke="#57534e" />
+            {areaPath ? <path d={areaPath} fill={`url(#${gradientId})`} /> : null}
+            <polyline fill="none" stroke={strokeColor} strokeWidth="3" points={polyline} />
+            {chartPoints.map((point, index) => (
+              <circle
+                key={`${title}-${point.label}-${index}`}
+                cx={point.x}
+                cy={point.y}
+                r={8}
+                fill="transparent"
+                onMouseEnter={() => setHoveredPoint(point)}
+                onMouseLeave={() => setHoveredPoint(null)}
+                onTouchStart={() => setHoveredPoint(point)}
+                onClick={() => setHoveredPoint(point)}
+              >
+                <title>{`${point.label}: ${point.value.toLocaleString()} ${valueUnit}`}</title>
+              </circle>
+            ))}
+            {activeHoveredPoint ? (
+              <g transform={`translate(${Math.min(615, activeHoveredPoint.x + 10)},${Math.max(20, activeHoveredPoint.y - 38)})`}>
+                <rect x="0" y="0" width="138" height="40" rx="8" fill="rgba(9,9,11,0.95)" stroke="#78716c" />
+                <text x="8" y="15" fill="#fde68a" fontSize="10">{activeHoveredPoint.label}</text>
+                <text x="8" y="30" fill="#f5f5f4" fontSize="11">{activeHoveredPoint.value.toLocaleString()} {valueUnit}</text>
+              </g>
+            ) : null}
+          </svg>
+        </div>
+      )}
+    </article>
+  );
+}
+
 function findTrackForComment(comment: string, tracks: LiveDashboardState["spotifyTracks"]) {
   const normalizedComment = normalizeText(comment);
   if (!normalizedComment) {
@@ -310,7 +420,6 @@ export function StreamControl() {
   const [autoLikeSubtextInput, setAutoLikeSubtextInput] = useState("{remaining} likes to go");
   const [autoLikeShowProgressInput, setAutoLikeShowProgressInput] = useState(true);
   const [isSavingGoals, setIsSavingGoals] = useState(false);
-  const [hoveredViewerPoint, setHoveredViewerPoint] = useState<ChartPlotPoint | null>(null);
   const youtubeFrameRef = useRef<HTMLIFrameElement | null>(null);
   const autoplayIntervalRef = useRef<number | null>(null);
   const autoplayStopTimeoutRef = useRef<number | null>(null);
@@ -669,28 +778,56 @@ export function StreamControl() {
     }
   }, [groupedTracksByAlbum, albumModalKey]);
 
-  const viewerCurve = useMemo(() => {
+  const sortedSamples = useMemo(() => {
     if (!activeSession) {
-      return [] as ChartPoint[];
+      return [] as LiveDashboardState["liveSessions"][number]["samples"];
     }
     return [...activeSession.samples]
       .sort((a, b) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime())
-      .slice(-200)
-      .map((sample) => ({ label: formatDateTime(sample.capturedAt), value: sample.viewerCount }));
+      .slice(-200);
   }, [activeSession]);
 
-  const viewerPolyline = useMemo(
-    () => pointsToPolyline(viewerCurve, MONITOR_CHART_WIDTH, MONITOR_CHART_HEIGHT, MONITOR_CHART_PADDING),
-    [viewerCurve]
+  const viewerCurve = useMemo(
+    () => sortedSamples.map((sample) => ({ label: formatDateTime(sample.capturedAt), value: sample.viewerCount })),
+    [sortedSamples]
   );
-  const viewerChartPoints = useMemo(
-    () => pointsToChartCoords(viewerCurve, MONITOR_CHART_WIDTH, MONITOR_CHART_HEIGHT, MONITOR_CHART_PADDING),
-    [viewerCurve]
+  const likeCurve = useMemo(
+    () => sortedSamples.map((sample) => ({ label: formatDateTime(sample.capturedAt), value: sample.likeCount })),
+    [sortedSamples]
   );
-  const viewerAreaPath = useMemo(
-    () => pointsToAreaPath(viewerChartPoints, MONITOR_CHART_HEIGHT, MONITOR_CHART_PADDING),
-    [viewerChartPoints]
-  );
+  const commentCurve = useMemo(() => {
+    if (!activeSession || sortedSamples.length === 0) {
+      return [] as ChartPoint[];
+    }
+    const sortedComments = [...activeSession.comments].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    let commentIndex = 0;
+    let runningCount = 0;
+    return sortedSamples.map((sample) => {
+      const sampleTime = new Date(sample.capturedAt).getTime();
+      while (commentIndex < sortedComments.length && new Date(sortedComments[commentIndex].createdAt).getTime() <= sampleTime) {
+        runningCount += 1;
+        commentIndex += 1;
+      }
+      return { label: formatDateTime(sample.capturedAt), value: runningCount };
+    });
+  }, [activeSession, sortedSamples]);
+  const giftCurve = useMemo(() => {
+    if (!activeSession || sortedSamples.length === 0) {
+      return [] as ChartPoint[];
+    }
+    const sortedGifts = [...activeSession.gifts].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    let giftIndex = 0;
+    let runningCount = 0;
+    return sortedSamples.map((sample) => {
+      const sampleTime = new Date(sample.capturedAt).getTime();
+      while (giftIndex < sortedGifts.length && new Date(sortedGifts[giftIndex].createdAt).getTime() <= sampleTime) {
+        runningCount += 1;
+        giftIndex += 1;
+      }
+      return { label: formatDateTime(sample.capturedAt), value: runningCount };
+    });
+  }, [activeSession, sortedSamples]);
+
   const viewerMax = useMemo(() => {
     if (viewerCurve.length === 0) {
       return 0;
@@ -709,25 +846,6 @@ export function StreamControl() {
     }
     return viewerCurve[viewerCurve.length - 1].value - viewerCurve[0].value;
   }, [viewerCurve]);
-  const viewerGridLines = useMemo(() => {
-    const maxValue = Math.max(1, viewerMax);
-    return [1, 0.75, 0.5, 0.25, 0].map((ratio) => {
-      const y = MONITOR_CHART_PADDING + (1 - ratio) * (MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING * 2);
-      return {
-        y,
-        value: Math.round(maxValue * ratio),
-      };
-    });
-  }, [viewerMax]);
-
-  useEffect(() => {
-    if (!hoveredViewerPoint) {
-      return;
-    }
-    if (!viewerChartPoints.some((point) => point.label === hoveredViewerPoint.label && point.value === hoveredViewerPoint.value)) {
-      setHoveredViewerPoint(null);
-    }
-  }, [viewerChartPoints, hoveredViewerPoint]);
 
   const sessionDurationMinutes = useMemo(() => {
     if (!activeSession) {
@@ -2002,72 +2120,40 @@ export function StreamControl() {
                     </div>
 
                     <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-                      <article className="min-h-0 rounded-xl border border-stone-700 bg-stone-900/95 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-stone-500">Viewer Curve</p>
-                            <p className="mt-1 text-sm text-stone-300">Current {currentViewerCount.toLocaleString()} | Min {viewerMin.toLocaleString()} | Max {viewerMax.toLocaleString()}</p>
-                          </div>
-                          {hoveredViewerPoint ? (
-                            <p className="text-right text-xs text-amber-200">
-                              {hoveredViewerPoint.label}
-                              <br />
-                              {hoveredViewerPoint.value.toLocaleString()} viewers
-                            </p>
-                          ) : (
-                            <p className="text-xs text-stone-500">Tap points for exact values</p>
-                          )}
-                        </div>
-
-                        {viewerCurve.length === 0 ? (
-                          <p className="mt-4 text-sm text-stone-400">No samples yet.</p>
-                        ) : (
-                          <div className="mt-3 overflow-hidden rounded-lg border border-stone-700/70 bg-stone-950/70 p-2">
-                            <svg viewBox={`0 0 ${MONITOR_CHART_WIDTH} ${MONITOR_CHART_HEIGHT}`} className="h-[240px] w-full md:h-[300px]">
-                              <defs>
-                                <linearGradient id="viewerAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#facc15" stopOpacity="0.38" />
-                                  <stop offset="100%" stopColor="#facc15" stopOpacity="0.03" />
-                                </linearGradient>
-                              </defs>
-                              {viewerGridLines.map((line) => (
-                                <g key={line.y}>
-                                  <line x1={MONITOR_CHART_PADDING} y1={line.y} x2={MONITOR_CHART_WIDTH - MONITOR_CHART_PADDING} y2={line.y} stroke="#292524" strokeDasharray="4 6" />
-                                  <text x={MONITOR_CHART_PADDING + 6} y={line.y - 4} fill="#a8a29e" fontSize="9">
-                                    {formatCompactNumber(line.value)}
-                                  </text>
-                                </g>
-                              ))}
-                              <line x1={MONITOR_CHART_PADDING} y1={MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING} x2={MONITOR_CHART_WIDTH - MONITOR_CHART_PADDING} y2={MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING} stroke="#57534e" />
-                              <line x1={MONITOR_CHART_PADDING} y1={MONITOR_CHART_PADDING} x2={MONITOR_CHART_PADDING} y2={MONITOR_CHART_HEIGHT - MONITOR_CHART_PADDING} stroke="#57534e" />
-                              {viewerAreaPath ? <path d={viewerAreaPath} fill="url(#viewerAreaGradient)" /> : null}
-                              <polyline fill="none" stroke="#facc15" strokeWidth="3" points={viewerPolyline} />
-                              {viewerChartPoints.map((point, index) => (
-                                <circle
-                                  key={`${point.label}-${index}`}
-                                  cx={point.x}
-                                  cy={point.y}
-                                  r={8}
-                                  fill="transparent"
-                                  onMouseEnter={() => setHoveredViewerPoint(point)}
-                                  onMouseLeave={() => setHoveredViewerPoint(null)}
-                                  onTouchStart={() => setHoveredViewerPoint(point)}
-                                  onClick={() => setHoveredViewerPoint(point)}
-                                >
-                                  <title>{`${point.label}: ${point.value.toLocaleString()} viewers`}</title>
-                                </circle>
-                              ))}
-                              {hoveredViewerPoint ? (
-                                <g transform={`translate(${Math.min(615, hoveredViewerPoint.x + 10)},${Math.max(20, hoveredViewerPoint.y - 38)})`}>
-                                  <rect x="0" y="0" width="138" height="40" rx="8" fill="rgba(9,9,11,0.95)" stroke="#78716c" />
-                                  <text x="8" y="15" fill="#fde68a" fontSize="10">{hoveredViewerPoint.label}</text>
-                                  <text x="8" y="30" fill="#f5f5f4" fontSize="11">{hoveredViewerPoint.value.toLocaleString()} viewers</text>
-                                </g>
-                              ) : null}
-                            </svg>
-                          </div>
-                        )}
-                      </article>
+                      <div className="grid min-h-0 grid-cols-1 gap-3">
+                        <MonitorTrendChart
+                          title="Viewer Curve"
+                          summary={`Current ${currentViewerCount.toLocaleString()} | Min ${viewerMin.toLocaleString()} | Max ${viewerMax.toLocaleString()}`}
+                          points={viewerCurve}
+                          strokeColor="#facc15"
+                          gradientId="viewerAreaGradient"
+                          valueUnit="viewers"
+                        />
+                        <MonitorTrendChart
+                          title="Total Likes Graph"
+                          summary={`Current ${activeSession?.likeCountLatest.toLocaleString() ?? "0"} total likes`}
+                          points={likeCurve}
+                          strokeColor="#f472b6"
+                          gradientId="likesAreaGradient"
+                          valueUnit="likes"
+                        />
+                        <MonitorTrendChart
+                          title="Total Comments Graph"
+                          summary={`Current ${activeSession?.totalCommentEvents.toLocaleString() ?? "0"} total comments`}
+                          points={commentCurve}
+                          strokeColor="#60a5fa"
+                          gradientId="commentsAreaGradient"
+                          valueUnit="comments"
+                        />
+                        <MonitorTrendChart
+                          title="Total Gifts Graph"
+                          summary={`Current ${activeSession?.totalGiftEvents.toLocaleString() ?? "0"} total gifts`}
+                          points={giftCurve}
+                          strokeColor="#fb923c"
+                          gradientId="giftsAreaGradient"
+                          valueUnit="gifts"
+                        />
+                      </div>
 
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1">
                         <article className="rounded-xl border border-stone-700 bg-stone-900/90 p-3">

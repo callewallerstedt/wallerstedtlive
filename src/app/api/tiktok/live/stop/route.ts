@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
+import { callLiveWorker, hasLiveWorkerConfigured } from "@/lib/live-worker-client";
 import { stopLiveTrackingByUsernameAsync } from "@/lib/tiktok-live";
 
 export const runtime = "nodejs";
@@ -15,6 +16,15 @@ const stopSchema = z.object({
 export async function POST(req: Request) {
   try {
     const body = stopSchema.parse(await req.json());
+
+    if (hasLiveWorkerConfigured()) {
+      const result = await callLiveWorker<{ ok: boolean; stopped: boolean; sessionId?: string; message: string }>(
+        "/track/stop",
+        { username: body.username }
+      );
+      return NextResponse.json(result);
+    }
+
     const result = await stopLiveTrackingByUsernameAsync(body.username);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

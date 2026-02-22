@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
+import { callLiveWorker, hasLiveWorkerConfigured } from "@/lib/live-worker-client";
 import { fetchLiveSnapshotByUsername } from "@/lib/tiktok-live";
 
 export const runtime = "nodejs";
@@ -15,6 +16,14 @@ const checkSchema = z.object({
 export async function POST(req: Request) {
   try {
     const body = checkSchema.parse(await req.json());
+
+    if (hasLiveWorkerConfigured()) {
+      const result = await callLiveWorker<{ ok: boolean; snapshot: unknown }>("/track/check", {
+        username: body.username,
+      });
+      return NextResponse.json(result);
+    }
+
     const snapshot = await fetchLiveSnapshotByUsername(body.username);
     return NextResponse.json({ ok: true, snapshot });
   } catch (error) {

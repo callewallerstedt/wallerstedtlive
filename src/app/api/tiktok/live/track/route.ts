@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 import { updateConfig } from "@/lib/config";
+import { callLiveWorker, hasLiveWorkerConfigured } from "@/lib/live-worker-client";
 import { startLiveTrackingByUsername } from "@/lib/tiktok-live";
 
 export const runtime = "nodejs";
@@ -24,6 +25,23 @@ export async function POST(req: Request) {
     await updateConfig({
       tiktokHandle: normalizedUsername || null,
     });
+    if (hasLiveWorkerConfigured()) {
+      const result = await callLiveWorker<{
+        ok: boolean;
+        trackedUsername: string;
+        started: boolean;
+        sessionId?: string;
+        message: string;
+      }>("/track/start", {
+        username: normalizedUsername,
+        durationSec: body.durationSec ?? 0,
+        pollIntervalSec: body.pollIntervalSec ?? 0.5,
+        collectChatEvents: body.collectChatEvents ?? true,
+        forceRestartIfRunning: body.forceRestartIfRunning ?? true,
+      });
+      return NextResponse.json(result);
+    }
+
     const result = await startLiveTrackingByUsername({
       username: normalizedUsername,
       durationSec: body.durationSec ?? 0,

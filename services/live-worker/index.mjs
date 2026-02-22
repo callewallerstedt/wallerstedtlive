@@ -26,6 +26,30 @@ const prisma = new PrismaClient({
 const activeJobsBySession = new Map();
 const activeSessionByUsername = new Map();
 
+function isSessionFkError(error) {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes("TikTokLiveSample_sessionId_fkey") ||
+    error.message.includes("TikTokLiveComment_sessionId_fkey") ||
+    error.message.includes("TikTokLiveGift_sessionId_fkey") ||
+    error.message.includes("Record to update not found") ||
+    error.message.includes("No record was found")
+  );
+}
+
+async function safeDbWrite(action, state) {
+  try {
+    await action();
+  } catch (error) {
+    if (isSessionFkError(error)) {
+      state.finalized = true;
+      state.warnings.push("session removed while stream was writing events");
+      return;
+    }
+    throw error;
+  }
+}
+
 const json = (res, code, payload) => {
   res.writeHead(code, { "Content-Type": "application/json" });
   res.end(JSON.stringify(payload));
@@ -233,7 +257,9 @@ function startStreamingJob(sessionId, input) {
 
     enqueue(async () => {
       if (stderr.trim()) state.warnings.push(stderr.trim());
-      await applyFinalSessionUpdate(state, errorMessage);
+      await safeDbWrite(async () => {
+        await applyFinalSessionUpdate(state, errorMessage);
+      }, state);
     });
 
     writeQueue.finally(() => {
@@ -258,18 +284,20 @@ function startStreamingJob(sessionId, input) {
       state.lastLike = toNumber(event.likeCount) || state.lastLike;
       state.lastEnter = toNumber(event.enterCount) || state.lastEnter;
       enqueue(async () => {
-        await prisma.tikTokLiveSession.update({
-          where: { id: sessionId },
-          data: {
-            isLive: state.isLive,
-            statusCode: state.statusCode ?? null,
-            roomId: state.roomId ?? null,
-            title: state.title ?? null,
-            likeCountLatest: state.lastLike,
-            enterCountLatest: state.lastEnter,
-            error: null,
-          },
-        });
+        await safeDbWrite(async () => {
+          await prisma.tikTokLiveSession.update({
+            where: { id: sessionId },
+            data: {
+              isLive: state.isLive,
+              statusCode: state.statusCode ?? null,
+              roomId: state.roomId ?? null,
+              title: state.title ?? null,
+              likeCountLatest: state.lastLike,
+              enterCountLatest: state.lastEnter,
+              error: null,
+            },
+          });
+        }, state);
       });
       return;
     }
@@ -288,21 +316,23 @@ function startStreamingJob(sessionId, input) {
       const avg = Number((state.viewerSum / Math.max(1, state.sampleCount)).toFixed(2));
 
       enqueue(async () => {
-        await prisma.tikTokLiveSample.create({
-          data: { sessionId, capturedAt, viewerCount, likeCount, enterCount },
-        });
-        await prisma.tikTokLiveSession.update({
-          where: { id: sessionId },
-          data: {
-            viewerCountPeak: state.viewerPeak,
-            viewerCountAvg: avg,
-            likeCountLatest: likeCount,
-            enterCountLatest: enterCount,
-            totalCommentEvents: state.totalComments,
-            totalGiftEvents: state.totalGifts,
-            totalGiftDiamonds: state.totalDiamonds,
-          },
-        });
+        await safeDbWrite(async () => {
+          await prisma.tikTokLiveSample.create({
+            data: { sessionId, capturedAt, viewerCount, likeCount, enterCount },
+          });
+          await prisma.tikTokLiveSession.update({
+            where: { id: sessionId },
+            data: {
+              viewerCountPeak: state.viewerPeak,
+              viewerCountAvg: avg,
+              likeCountLatest: likeCount,
+              enterCountLatest: enterCount,
+              totalCommentEvents: state.totalComments,
+              totalGiftEvents: state.totalGifts,
+              totalGiftDiamonds: state.totalDiamonds,
+            },
+          });
+        }, state);
       });
       return;
     }
@@ -312,15 +342,17 @@ function startStreamingJob(sessionId, input) {
       if (!comment) return;
       state.totalComments += 1;
       enqueue(async () => {
-        await prisma.tikTokLiveComment.create({
-          data: {
-            sessionId,
-            createdAt: toDate(event.createdAt) ?? new Date(),
-            userUniqueId: typeof event.userUniqueId === "string" ? event.userUniqueId : null,
-            nickname: typeof event.nickname === "string" ? event.nickname : null,
-            comment,
-          },
-        });
+        await safeDbWrite(async () => {
+          await prisma.tikTokLiveComment.create({
+            data: {
+              sessionId,
+              createdAt: toDate(event.createdAt) ?? new Date(),
+              userUniqueId: typeof event.userUniqueId === "string" ? event.userUniqueId : null,
+              nickname: typeof event.nickname === "string" ? event.nickname : null,
+              comment,
+            },
+          });
+        }, state);
       });
       return;
     }
@@ -331,17 +363,19 @@ function startStreamingJob(sessionId, input) {
       state.totalGifts += 1;
       state.totalDiamonds += diamondCount * repeatCount;
       enqueue(async () => {
-        await prisma.tikTokLiveGift.create({
-          data: {
-            sessionId,
-            createdAt: toDate(event.createdAt) ?? new Date(),
-            userUniqueId: typeof event.userUniqueId === "string" ? event.userUniqueId : null,
-            nickname: typeof event.nickname === "string" ? event.nickname : null,
-            giftName: typeof event.giftName === "string" ? event.giftName : null,
-            diamondCount,
-            repeatCount,
-          },
-        });
+        await safeDbWrite(async () => {
+          await prisma.tikTokLiveGift.create({
+            data: {
+              sessionId,
+              createdAt: toDate(event.createdAt) ?? new Date(),
+              userUniqueId: typeof event.userUniqueId === "string" ? event.userUniqueId : null,
+              nickname: typeof event.nickname === "string" ? event.nickname : null,
+              giftName: typeof event.giftName === "string" ? event.giftName : null,
+              diamondCount,
+              repeatCount,
+            },
+          });
+        }, state);
       });
       return;
     }

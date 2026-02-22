@@ -20,9 +20,19 @@ export async function callLiveWorker<T>(path: string, body: Record<string, unkno
     cache: "no-store",
   });
 
-  const data = (await response.json()) as T & { error?: string };
+  const rawText = await response.text();
+  let data: (T & { error?: string }) | null = null;
+  try {
+    data = JSON.parse(rawText) as T & { error?: string };
+  } catch {
+    if (rawText.includes("no tunnel") || rawText.includes("<h1>")) {
+      throw new Error("Live worker tunnel is offline. Reconnecting now — retry in ~20-40s.");
+    }
+    throw new Error("Live worker returned non-JSON response.");
+  }
+
   if (!response.ok) {
-    throw new Error((data as { error?: string }).error ?? `Worker call failed: ${response.status}`);
+    throw new Error(data.error ?? `Worker call failed: ${response.status}`);
   }
   return data;
 }

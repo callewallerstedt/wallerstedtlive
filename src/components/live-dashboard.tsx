@@ -384,7 +384,7 @@ export function LiveDashboard() {
   useEffect(() => {
     const interval = setInterval(() => {
       void refreshStateSilently();
-    }, 1000);
+    }, 700);
     return () => clearInterval(interval);
   }, []);
 
@@ -577,10 +577,10 @@ export function LiveDashboard() {
     }));
 
     const startedAtMs = new Date(selectedSession.startedAt).getTime();
-    const endedAtMs = new Date(selectedSession.endedAt ?? selectedSession.startedAt).getTime();
-    const spanMs = Math.max(60_000, endedAtMs - startedAtMs);
-    const bucketCount = Math.max(1, Math.min(24, Math.ceil(spanMs / 60_000)));
-    const bucketSizeMs = Math.ceil(spanMs / bucketCount);
+    const effectiveEndMs = selectedSession.endedAt ? new Date(selectedSession.endedAt).getTime() : Date.now();
+    const spanMs = Math.max(60_000, effectiveEndMs - startedAtMs);
+    const bucketSizeMs = 60_000; // fixed 1-minute buckets so the graph never "rolls"
+    const bucketCount = Math.max(1, Math.min(720, Math.ceil(spanMs / bucketSizeMs))); // up to 12h
 
     const messageBuckets = new Array<number>(bucketCount).fill(0);
     const giftBuckets = new Array<number>(bucketCount).fill(0);

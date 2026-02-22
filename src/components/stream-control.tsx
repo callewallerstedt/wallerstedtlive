@@ -562,6 +562,9 @@ export function StreamControl() {
   }
 
   async function updateOverlay(payload: OverlayUpdatePayload) {
+    if (!overlayState) {
+      throw new Error("Overlay state is not loaded yet");
+    }
     const previousOverlay = overlayState;
     const optimisticOverlay: StreamOverlayState = {
       mode: payload.mode ?? previousOverlay.mode,

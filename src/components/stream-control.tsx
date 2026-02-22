@@ -1039,14 +1039,18 @@ export function StreamControl() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: handle }),
       });
-      const data = (await response.json()) as { error?: string; snapshot?: { isLive: boolean; viewerCount: number; likeCount: number; enterCount: number } };
+      const data = (await response.json()) as {
+        error?: string;
+        warning?: string;
+        snapshot?: { isLive: boolean; viewerCount: number; likeCount: number; enterCount: number };
+      };
       if (!response.ok) {
         throw new Error(data.error ?? "Check failed");
       }
       if (data.snapshot) {
         setQuickSnapshot(data.snapshot);
       }
-      setToast({ type: "info", text: "Live snapshot refreshed." });
+      setToast({ type: "info", text: data.warning ?? "Live snapshot refreshed." });
     } catch (error) {
       setToast({ type: "error", text: error instanceof Error ? error.message : "Check failed" });
     } finally {

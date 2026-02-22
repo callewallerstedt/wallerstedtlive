@@ -842,18 +842,33 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
     }
   }
 
-  let snapshot: LiveSnapshot;
+  let snapshot: LiveSnapshot | null = null;
+  let usedFallbackSnapshot = false;
+  let snapshotFailureMessage = "";
   try {
     snapshot = await fetchLiveSnapshotByUsername(username);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Live check failed";
-    return {
-      started: false,
-      message,
+    snapshotFailureMessage = error instanceof Error ? error.message : "Live check failed";
+    if (!serverlessMode) {
+      return {
+        started: false,
+        message: snapshotFailureMessage,
+      };
+    }
+    // In Vercel polling mode, TikTok may intermittently return anti-bot HTML.
+    // Start a provisional session and keep polling for real live stats.
+    snapshot = {
+      username,
+      isLive: true,
+      viewerCount: 0,
+      likeCount: 0,
+      enterCount: 0,
+      fetchedAt: new Date(),
     };
+    usedFallbackSnapshot = true;
   }
 
-  if (!snapshot.isLive) {
+  if (snapshot && !snapshot.isLive) {
     return {
       started: false,
       message: "This user is offline right now. Start again when they are live.",
@@ -876,30 +891,30 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
     data: {
       username,
       source: serverlessMode ? POLL_SOURCE : "tiktoklive-python-stream",
-      isLive: snapshot.isLive,
-      statusCode: snapshot.statusCode ?? 0,
-      roomId: snapshot.roomId ?? null,
-      title: snapshot.title ?? null,
-      viewerCountStart: snapshot.viewerCount,
-      viewerCountPeak: snapshot.viewerCount,
-      viewerCountAvg: snapshot.viewerCount,
-      likeCountLatest: snapshot.likeCount,
-      enterCountLatest: snapshot.enterCount,
+      isLive: snapshot?.isLive ?? true,
+      statusCode: snapshot?.statusCode ?? 0,
+      roomId: snapshot?.roomId ?? null,
+      title: snapshot?.title ?? null,
+      viewerCountStart: snapshot?.viewerCount ?? 0,
+      viewerCountPeak: snapshot?.viewerCount ?? 0,
+      viewerCountAvg: snapshot?.viewerCount ?? 0,
+      likeCountLatest: snapshot?.likeCount ?? 0,
+      enterCountLatest: snapshot?.enterCount ?? 0,
       totalCommentEvents: 0,
       totalGiftEvents: 0,
       totalGiftDiamonds: 0,
       warnings: null,
-      error: null,
+      error: usedFallbackSnapshot ? snapshotFailureMessage || "Live page parse fallback in use." : null,
     },
   });
 
   await prisma.tikTokLiveSample.create({
     data: {
       sessionId: session.id,
-      capturedAt: snapshot.fetchedAt,
-      viewerCount: snapshot.viewerCount,
-      likeCount: snapshot.likeCount,
-      enterCount: snapshot.enterCount,
+      capturedAt: snapshot?.fetchedAt ?? new Date(),
+      viewerCount: snapshot?.viewerCount ?? 0,
+      likeCount: snapshot?.likeCount ?? 0,
+      enterCount: snapshot?.enterCount ?? 0,
     },
   });
 
@@ -907,7 +922,11 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
     return {
       sessionId: session.id,
       started: true,
-      message: restartedExisting ? "Live tracker restarted (Vercel polling mode)." : "Live tracking started (Vercel polling mode).",
+      message: usedFallbackSnapshot
+        ? "Live tracking started (Vercel polling fallback mode). Data should appear as soon as TikTok returns parsable live state."
+        : restartedExisting
+          ? "Live tracker restarted (Vercel polling mode)."
+          : "Live tracking started (Vercel polling mode).",
     };
   }
 
@@ -1061,6 +1080,7 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
       viewerCountAvg: avg,
       likeCountLatest: snapshot.likeCount > 0 ? snapshot.likeCount : activeSession.likeCountLatest,
       enterCountLatest: Math.max(activeSession.enterCountLatest, snapshot.enterCount),
+      ...(snapshot.isLive ? { error: null } : {}),
       ...(snapshot.isLive ? {} : { endedAt: new Date(), error: "User is currently offline." }),
     },
   });

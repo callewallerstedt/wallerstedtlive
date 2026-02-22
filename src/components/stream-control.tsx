@@ -1569,7 +1569,7 @@ export function StreamControl() {
         <div className="pointer-events-none fixed right-3 top-3 z-50">
           <button
             onClick={() => setIsFocusMode((prev) => !prev)}
-            className="pointer-events-auto min-h-10 rounded-lg border border-stone-500 bg-stone-900/95 px-3 py-2 text-xs text-stone-100 shadow-lg backdrop-blur"
+            className="pointer-events-auto h-8 rounded-md border border-stone-500 bg-stone-900/95 px-2.5 py-1 text-[11px] text-stone-100 shadow-lg backdrop-blur"
           >
             {isFocusMode ? "Show Controls" : "Hide Controls"}
           </button>
@@ -1669,27 +1669,25 @@ export function StreamControl() {
 
           <main className="min-h-0 rounded-2xl border border-stone-700 bg-stone-900 p-3 lg:col-span-2">
             <div className="flex h-full flex-col gap-3">
-              {!isFocusMode ? (
-                <div
-                  ref={panelTabsRef}
-                  onMouseDown={handlePanelTabMouseDown}
-                  onMouseMove={handlePanelTabMouseMove}
-                  onMouseUp={handlePanelTabMouseUpOrLeave}
-                  onMouseLeave={handlePanelTabMouseUpOrLeave}
-                  className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none cursor-grab active:cursor-grabbing"
-                >
-                  {panelButtons.map((panel) => (
-                    <button
-                      key={panel.id}
-                      onClick={() => handlePanelTabClick(panel.id)}
-                      className={`min-h-14 min-w-[8.75rem] shrink-0 rounded-xl border px-3 py-3 text-left transition md:min-w-[9.5rem] ${activePanel === panel.id ? "border-amber-300/60 bg-amber-300/10" : "border-stone-700 bg-stone-950 hover:border-stone-500"}`}
-                    >
-                      <p className="text-sm font-semibold text-stone-100">{panel.label}</p>
-                      <p className="mt-1 text-xs text-stone-400">{panel.hint}</p>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+              <div
+                ref={panelTabsRef}
+                onMouseDown={handlePanelTabMouseDown}
+                onMouseMove={handlePanelTabMouseMove}
+                onMouseUp={handlePanelTabMouseUpOrLeave}
+                onMouseLeave={handlePanelTabMouseUpOrLeave}
+                className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none cursor-grab active:cursor-grabbing"
+              >
+                {panelButtons.map((panel) => (
+                  <button
+                    key={panel.id}
+                    onClick={() => handlePanelTabClick(panel.id)}
+                    className={`min-h-14 min-w-[8.75rem] shrink-0 rounded-xl border px-3 py-3 text-left transition md:min-w-[9.5rem] ${activePanel === panel.id ? "border-amber-300/60 bg-amber-300/10" : "border-stone-700 bg-stone-950 hover:border-stone-500"}`}
+                  >
+                    <p className="text-sm font-semibold text-stone-100">{panel.label}</p>
+                    <p className="mt-1 text-xs text-stone-400">{panel.hint}</p>
+                  </button>
+                ))}
+              </div>
 
               <section className="relative min-h-0 flex-1 overflow-auto rounded-xl border border-stone-700 bg-stone-950/70 p-3">
                 <div className={activePanel === "player" ? "flex h-full flex-col" : "absolute left-[-9999px] top-0 h-px w-px overflow-hidden opacity-0"}>

@@ -421,10 +421,10 @@ export function StreamControl() {
       .filter((item): item is CtaPresetConfig => item !== null);
     const ordered = ctaOrder.map((key) => normalized.find((preset) => preset.key === key)).filter((preset): preset is CtaPresetConfig => Boolean(preset));
     setCtaPresets(ordered);
-    setCtaDrafts((prev) => {
+    setCtaDrafts(() => {
       const next: Record<string, CtaPresetConfig> = {};
       for (const preset of ordered) {
-        next[preset.key] = prev[preset.key] ?? preset;
+        next[preset.key] = preset;
       }
       return next;
     });

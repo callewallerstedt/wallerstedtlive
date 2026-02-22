@@ -371,7 +371,7 @@ function toYouTubePlayerSrc(embedUrl: string): string {
     url.searchParams.set("rel", "0");
     url.searchParams.set("enablejsapi", "1");
     url.searchParams.set("playsinline", "1");
-    url.searchParams.set("mute", "1");
+    url.searchParams.set("mute", "0");
     url.searchParams.set("controls", "1");
     if (typeof window !== "undefined") {
       url.searchParams.set("origin", window.location.origin);
@@ -1028,13 +1028,17 @@ export function StreamControl() {
     { id: "custom", label: "Custom", hint: "manual text" },
   ];
 
-  const sendYoutubeCommand = useCallback((command: "playVideo" | "pauseVideo") => {
+  const sendYoutubeRawCommand = useCallback((func: string, args: unknown[] = []) => {
     const frame = youtubeFrameRef.current;
     if (!frame?.contentWindow) {
       return;
     }
-    frame.contentWindow.postMessage(JSON.stringify({ event: "command", func: command, args: [] }), "*");
+    frame.contentWindow.postMessage(JSON.stringify({ event: "command", func, args }), "*");
   }, []);
+
+  const sendYoutubeCommand = useCallback((command: "playVideo" | "pauseVideo") => {
+    sendYoutubeRawCommand(command);
+  }, [sendYoutubeRawCommand]);
 
   const stopAutoplayBoost = useCallback(() => {
     if (autoplayIntervalRef.current !== null) {
@@ -1070,6 +1074,8 @@ export function StreamControl() {
   }
 
   function playYoutube() {
+    sendYoutubeRawCommand("unMute");
+    sendYoutubeRawCommand("setVolume", [100]);
     sendYoutubeCommand("playVideo");
     triggerAutoplayBoost();
     setIsYoutubePlaying(true);
@@ -1093,6 +1099,8 @@ export function StreamControl() {
   }
 
   function handleYoutubeFrameLoad() {
+    sendYoutubeRawCommand("unMute");
+    sendYoutubeRawCommand("setVolume", [100]);
     triggerAutoplayBoost();
     setIsYoutubePlaying(true);
   }
@@ -2154,7 +2162,7 @@ export function StreamControl() {
                       ))}
                     </div>
 
-                    <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-4">
+                    <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,1fr)] xl:items-start">
                       <div className="grid min-h-0 grid-cols-1 gap-4">
                         <MonitorTrendChart
                           title="Viewer Curve"
@@ -2172,25 +2180,27 @@ export function StreamControl() {
                           gradientId="likesAreaGradient"
                           valueUnit="likes"
                         />
-                        <MonitorTrendChart
-                          title="Total Comments Graph"
-                          summary={`Current ${activeSession?.totalCommentEvents.toLocaleString() ?? "0"} total comments`}
-                          points={commentCurve}
-                          strokeColor="#60a5fa"
-                          gradientId="commentsAreaGradient"
-                          valueUnit="comments"
-                        />
-                        <MonitorTrendChart
-                          title="Total Gifts Graph"
-                          summary={`Current ${activeSession?.totalGiftEvents.toLocaleString() ?? "0"} total gifts`}
-                          points={giftCurve}
-                          strokeColor="#fb923c"
-                          gradientId="giftsAreaGradient"
-                          valueUnit="gifts"
-                        />
+                        <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                          <MonitorTrendChart
+                            title="Total Comments Graph"
+                            summary={`Current ${activeSession?.totalCommentEvents.toLocaleString() ?? "0"} total comments`}
+                            points={commentCurve}
+                            strokeColor="#60a5fa"
+                            gradientId="commentsAreaGradient"
+                            valueUnit="comments"
+                          />
+                          <MonitorTrendChart
+                            title="Total Gifts Graph"
+                            summary={`Current ${activeSession?.totalGiftEvents.toLocaleString() ?? "0"} total gifts`}
+                            points={giftCurve}
+                            strokeColor="#fb923c"
+                            gradientId="giftsAreaGradient"
+                            valueUnit="gifts"
+                          />
+                        </div>
                       </div>
 
-                      <div className="grid grid-cols-1 gap-4">
+                      <div className="grid grid-cols-1 gap-4 xl:sticky xl:top-0">
                         <article className="rounded-xl border border-stone-700 bg-stone-900/90 p-3">
                           <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Audience Performance</p>
                           <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">

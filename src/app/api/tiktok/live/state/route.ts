@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getOrCreateConfig } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
+import { refreshLiveTrackingSnapshot } from "@/lib/tiktok-live";
 import { LiveDashboardState } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -11,6 +12,9 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const runtimeMode = url.searchParams.get("runtime") === "1";
     const config = await getOrCreateConfig();
+    if (runtimeMode) {
+      await refreshLiveTrackingSnapshot(config.tiktokHandle ?? undefined).catch(() => undefined);
+    }
     const [liveSessions, latestSyncEvents, spotifyTracks] = runtimeMode
       ? await Promise.all([
           prisma.tikTokLiveSession.findMany({

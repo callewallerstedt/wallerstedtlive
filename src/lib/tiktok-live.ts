@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
 
 import { prisma } from "@/lib/prisma";
@@ -78,6 +78,9 @@ type JobState = {
 
 const activeJobsBySession = new Map<string, ActiveJob>();
 const activeSessionByUsername = new Map<string, string>();
+type PythonInvocation = { command: string; prefixArgs: string[] };
+let cachedPythonInvocation: PythonInvocation | null | undefined;
+const POLL_SOURCE = "tiktoklive-vercel-poll";
 
 function normalizeUsername(username: string): string {
   return username.trim().replace(/^@/, "");
@@ -112,6 +115,109 @@ function toDate(value: unknown): Date | null {
 
 function uniqueWarnings(warnings: string[]): string[] {
   return Array.from(new Set(warnings.map((value) => value.trim()).filter(Boolean)));
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function isServerlessRuntime(): boolean {
+  return process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
+}
+
+function getPythonNotFoundMessage(): string {
+  if (process.platform === "win32") {
+    return "Python was not found. Install Python and ensure `python` or `py -3` is available, or set PYTHON_PATH in .env (example: PYTHON_PATH=C:\\Python311\\python.exe).";
+  }
+  return "Python was not found. Install Python and ensure `python3`/`python` is available, or set PYTHON_PATH in .env.";
+}
+
+function resolvePythonInvocation(): PythonInvocation | null {
+  const envPath = process.env.PYTHON_PATH?.trim();
+  const candidates: PythonInvocation[] = envPath
+    ? [{ command: envPath, prefixArgs: [] }]
+    : process.platform === "win32"
+      ? [
+          { command: "python", prefixArgs: [] },
+          { command: "py", prefixArgs: ["-3"] },
+          { command: "python3", prefixArgs: [] },
+        ]
+      : [
+          { command: "python3", prefixArgs: [] },
+          { command: "python", prefixArgs: [] },
+        ];
+
+  for (const candidate of candidates) {
+    const probe = spawnSync(candidate.command, [...candidate.prefixArgs, "--version"], {
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    if (probe.error?.message && /ENOENT/i.test(probe.error.message)) {
+      continue;
+    }
+    if (probe.status === 0 || !probe.error) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function getPythonInvocation(): PythonInvocation | null {
+  if (cachedPythonInvocation !== undefined) {
+    return cachedPythonInvocation;
+  }
+  cachedPythonInvocation = resolvePythonInvocation();
+  return cachedPythonInvocation;
+}
+
+async function fetchLiveSnapshotFromWebPage(username: string): Promise<LiveSnapshot> {
+  const url = `https://www.tiktok.com/@${encodeURIComponent(username)}/live`;
+  const response = await fetch(url, {
+    headers: {
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "accept-language": "en-US,en;q=0.9",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`TikTok live page returned ${response.status}.`);
+  }
+
+  const html = await response.text();
+  const match = html.match(/<script id="SIGI_STATE" type="application\/json">([\s\S]*?)<\/script>/);
+  if (!match?.[1]) {
+    throw new Error("TikTok live page did not include SIGI_STATE.");
+  }
+
+  const parsed = JSON.parse(match[1]) as Record<string, unknown>;
+  const liveRoomRoot = asRecord(parsed.LiveRoom);
+  const liveRoomUserInfo = asRecord(liveRoomRoot?.liveRoomUserInfo);
+  const liveRoom = asRecord(liveRoomUserInfo?.liveRoom);
+  const liveRoomStats = asRecord(liveRoom?.liveRoomStats);
+
+  const status = toNumber(liveRoom?.status);
+  const isLive = status === 2;
+  const viewerCount = Math.max(0, toNumber(liveRoomStats?.userCount));
+  const enterCount = Math.max(0, toNumber(liveRoomStats?.enterCount));
+  const roomIdRaw = liveRoom?.streamId;
+  const roomId = typeof roomIdRaw === "string" && roomIdRaw.trim() ? roomIdRaw.trim() : undefined;
+  const titleRaw = liveRoom?.title;
+  const title = typeof titleRaw === "string" && titleRaw.trim() ? titleRaw.trim() : undefined;
+
+  return {
+    username,
+    roomId,
+    title,
+    statusCode: status || undefined,
+    isLive,
+    viewerCount,
+    likeCount: 0,
+    enterCount,
+    fetchedAt: new Date(),
+  };
 }
 
 function parseJsonFromStdout(stdout: string): BridgePayload {
@@ -150,9 +256,13 @@ async function runTikTokLiveBridge(input: {
   maxComments: number;
   maxGifts: number;
 }): Promise<BridgePayload> {
-  const pythonPath = process.env.PYTHON_PATH?.trim() || "python";
+  const pythonInvocation = getPythonInvocation();
+  if (!pythonInvocation) {
+    throw new Error(getPythonNotFoundMessage());
+  }
   const scriptPath = path.join(process.cwd(), "scripts", "tiktoklive_bridge.py");
   const args = [
+    ...pythonInvocation.prefixArgs,
     scriptPath,
     "--mode",
     input.mode,
@@ -174,7 +284,7 @@ async function runTikTokLiveBridge(input: {
   const timeoutMs = Math.max(20_000, input.durationSec * 1000 + 25_000);
 
   return await new Promise<BridgePayload>((resolve, reject) => {
-    const child = spawn(pythonPath, args, {
+    const child = spawn(pythonInvocation.command, args, {
       cwd: process.cwd(),
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -199,6 +309,10 @@ async function runTikTokLiveBridge(input: {
 
     child.on("error", (error) => {
       clearTimeout(timer);
+      if (/ENOENT/i.test(error.message)) {
+        reject(new Error(getPythonNotFoundMessage()));
+        return;
+      }
       reject(new Error(`TikTokLive bridge process error: ${error.message}`));
     });
 
@@ -256,9 +370,13 @@ function spawnTikTokLiveStream(input: {
   maxComments: number;
   maxGifts: number;
 }): ChildProcessWithoutNullStreams {
-  const pythonPath = process.env.PYTHON_PATH?.trim() || "python";
+  const pythonInvocation = getPythonInvocation();
+  if (!pythonInvocation) {
+    throw new Error(getPythonNotFoundMessage());
+  }
   const scriptPath = path.join(process.cwd(), "scripts", "tiktoklive_bridge.py");
   const args = [
+    ...pythonInvocation.prefixArgs,
     scriptPath,
     "--mode",
     "stream",
@@ -277,7 +395,7 @@ function spawnTikTokLiveStream(input: {
     args.push("--collect-chat");
   }
 
-  return spawn(pythonPath, args, {
+  return spawn(pythonInvocation.command, args, {
     cwd: process.cwd(),
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
@@ -594,17 +712,24 @@ export async function fetchLiveSnapshotByUsername(rawUsername: string): Promise<
     throw new Error("Username is required.");
   }
 
-  const payload = await runTikTokLiveBridge({
-    mode: "check",
-    username,
-    durationSec: 8,
-    sampleIntervalSec: 1,
-    collectChat: false,
-    maxComments: 0,
-    maxGifts: 0,
-  });
+  if (isServerlessRuntime()) {
+    return fetchLiveSnapshotFromWebPage(username);
+  }
 
-  return normalizeSnapshotFromBridge(username, payload);
+  try {
+    const payload = await runTikTokLiveBridge({
+      mode: "check",
+      username,
+      durationSec: 8,
+      sampleIntervalSec: 1,
+      collectChat: false,
+      maxComments: 0,
+      maxGifts: 0,
+    });
+    return normalizeSnapshotFromBridge(username, payload);
+  } catch {
+    return fetchLiveSnapshotFromWebPage(username);
+  }
 }
 
 export async function startLiveTrackingByUsername(input: TrackLiveInput): Promise<StartTrackLiveResult> {
@@ -612,8 +737,29 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
   if (!username) {
     throw new Error("Username is required.");
   }
+  const serverlessMode = isServerlessRuntime();
 
   let restartedExisting = false;
+  const existingDbSession = await prisma.tikTokLiveSession.findFirst({
+    where: { username, endedAt: null },
+    orderBy: { startedAt: "desc" },
+  });
+  if (existingDbSession) {
+    if (input.forceRestartIfRunning) {
+      await prisma.tikTokLiveSession.update({
+        where: { id: existingDbSession.id },
+        data: { endedAt: new Date(), error: "Restarted by user." },
+      });
+      restartedExisting = true;
+    } else {
+      return {
+        sessionId: existingDbSession.id,
+        started: false,
+        message: "Tracking is already running for this username.",
+      };
+    }
+  }
+
   const existingSessionId = activeSessionByUsername.get(username);
   if (existingSessionId && activeJobsBySession.has(existingSessionId)) {
     if (input.forceRestartIfRunning) {
@@ -646,6 +792,13 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
     };
   }
 
+  if (!getPythonInvocation()) {
+    return {
+      started: false,
+      message: getPythonNotFoundMessage(),
+    };
+  }
+
   const durationRaw = Math.floor(input.durationSec);
   const durationSec = durationRaw <= 0 ? 0 : Math.max(15, Math.min(21600, durationRaw));
   const pollIntervalSec = clampSampleIntervalSec(input.pollIntervalSec, 0.5);
@@ -654,14 +807,16 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
   const session = await prisma.tikTokLiveSession.create({
     data: {
       username,
-      source: "tiktoklive-python-stream",
-      isLive: false,
-      statusCode: 0,
-      viewerCountStart: 0,
-      viewerCountPeak: 0,
-      viewerCountAvg: 0,
-      likeCountLatest: 0,
-      enterCountLatest: 0,
+      source: serverlessMode ? POLL_SOURCE : "tiktoklive-python-stream",
+      isLive: snapshot.isLive,
+      statusCode: snapshot.statusCode ?? 0,
+      roomId: snapshot.roomId ?? null,
+      title: snapshot.title ?? null,
+      viewerCountStart: snapshot.viewerCount,
+      viewerCountPeak: snapshot.viewerCount,
+      viewerCountAvg: snapshot.viewerCount,
+      likeCountLatest: snapshot.likeCount,
+      enterCountLatest: snapshot.enterCount,
       totalCommentEvents: 0,
       totalGiftEvents: 0,
       totalGiftDiamonds: 0,
@@ -669,6 +824,24 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
       error: null,
     },
   });
+
+  await prisma.tikTokLiveSample.create({
+    data: {
+      sessionId: session.id,
+      capturedAt: snapshot.fetchedAt,
+      viewerCount: snapshot.viewerCount,
+      likeCount: snapshot.likeCount,
+      enterCount: snapshot.enterCount,
+    },
+  });
+
+  if (serverlessMode) {
+    return {
+      sessionId: session.id,
+      started: true,
+      message: restartedExisting ? "Live tracker restarted (Vercel polling mode)." : "Live tracking started (Vercel polling mode).",
+    };
+  }
 
   startStreamingJob(session.id, {
     username,
@@ -720,6 +893,109 @@ export function stopLiveTrackingByUsername(rawUsername: string): {
     sessionId,
     message: "Stop signal sent to live tracker.",
   };
+}
+
+export async function stopLiveTrackingByUsernameAsync(rawUsername: string): Promise<{
+  stopped: boolean;
+  sessionId?: string;
+  message: string;
+}> {
+  const immediate = stopLiveTrackingByUsername(rawUsername);
+  if (immediate.stopped) {
+    return immediate;
+  }
+
+  const username = normalizeUsername(rawUsername);
+  if (!username) {
+    return immediate;
+  }
+
+  const openSession = await prisma.tikTokLiveSession.findFirst({
+    where: { username, endedAt: null },
+    orderBy: { startedAt: "desc" },
+  });
+  if (!openSession) {
+    return immediate;
+  }
+
+  await prisma.tikTokLiveSession.update({
+    where: { id: openSession.id },
+    data: {
+      endedAt: new Date(),
+      error: "Stopped by user.",
+    },
+  });
+
+  return {
+    stopped: true,
+    sessionId: openSession.id,
+    message: "Stop signal applied to active polling session.",
+  };
+}
+
+export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise<void> {
+  if (!isServerlessRuntime()) {
+    return;
+  }
+
+  const username = normalizeUsername(rawUsername ?? "");
+  const activeSession = await prisma.tikTokLiveSession.findFirst({
+    where: {
+      endedAt: null,
+      source: POLL_SOURCE,
+      ...(username ? { username } : {}),
+    },
+    orderBy: { startedAt: "desc" },
+    select: {
+      id: true,
+      username: true,
+      viewerCountPeak: true,
+      viewerCountAvg: true,
+      likeCountLatest: true,
+      enterCountLatest: true,
+      roomId: true,
+      title: true,
+      statusCode: true,
+    },
+  });
+
+  if (!activeSession) {
+    return;
+  }
+
+  const snapshot = await fetchLiveSnapshotByUsername(activeSession.username);
+  const sampleCount = await prisma.tikTokLiveSample.count({
+    where: { sessionId: activeSession.id },
+  });
+  const nextSampleCount = sampleCount + 1;
+  const avg = Number(
+    ((activeSession.viewerCountAvg * sampleCount + snapshot.viewerCount) / Math.max(1, nextSampleCount)).toFixed(2)
+  );
+
+  await prisma.tikTokLiveSample.create({
+    data: {
+      sessionId: activeSession.id,
+      capturedAt: snapshot.fetchedAt,
+      viewerCount: snapshot.viewerCount,
+      likeCount: snapshot.likeCount,
+      enterCount: snapshot.enterCount,
+    },
+  });
+
+  await prisma.tikTokLiveSession.update({
+    where: { id: activeSession.id },
+    data: {
+      isLive: snapshot.isLive,
+      statusCode: snapshot.statusCode ?? activeSession.statusCode ?? null,
+      roomId: snapshot.roomId ?? activeSession.roomId ?? null,
+      title: snapshot.title ?? activeSession.title ?? null,
+      viewerCountPeak: Math.max(activeSession.viewerCountPeak, snapshot.viewerCount),
+      viewerCountAvg: avg,
+      likeCountLatest: snapshot.likeCount > 0 ? snapshot.likeCount : activeSession.likeCountLatest,
+      enterCountLatest: Math.max(activeSession.enterCountLatest, snapshot.enterCount),
+      ...(snapshot.isLive ? {} : { endedAt: new Date(), error: "User is currently offline." }),
+    },
+  });
 }
 
 export async function deleteLiveSessionById(sessionId: string): Promise<{ deleted: boolean; message: string }> {

@@ -249,6 +249,112 @@ function snapshotFromLooseHtmlSignals(username: string, html: string): LiveSnaps
   };
 }
 
+function isLikelyOfflineError(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    text.includes("offline") ||
+    text.includes("live has ended") ||
+    text.includes("user_not_found") ||
+    text.includes("account not found")
+  );
+}
+
+async function fetchLiveSnapshotFromConnector(username: string): Promise<LiveSnapshot> {
+  const mod = (await import("tiktok-live-connector")) as {
+    WebcastPushConnection: new (
+      uniqueId: string,
+      options?: Record<string, unknown>
+    ) => {
+      roomId?: string | number;
+      roomInfo?: Record<string, unknown>;
+      on: (event: string, cb: (payload: Record<string, unknown>) => void) => void;
+      connect: () => Promise<Record<string, unknown>>;
+      disconnect: () => Promise<void>;
+    };
+  };
+  const connection = new mod.WebcastPushConnection(username, {
+    enableExtendedGiftInfo: false,
+    requestPollingIntervalMs: 1200,
+  });
+
+  let roomId = "";
+  let viewerCount = 0;
+  let enterCount = 0;
+  let likeCount = 0;
+
+  connection.on("roomUser", (event) => {
+    viewerCount = Math.max(viewerCount, toNumber(event.viewerCount));
+    enterCount = Math.max(enterCount, toNumber(event.totalUser));
+    const eventRoomId = typeof event.roomId === "string" ? event.roomId : String(event.roomId ?? "");
+    if (eventRoomId.trim()) {
+      roomId = eventRoomId.trim();
+    }
+  });
+
+  connection.on("like", (event) => {
+    likeCount = Math.max(likeCount, toNumber(event.totalLikeCount));
+  });
+
+  let connected = false;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error("TikTok connector timed out.")), 12_000);
+  });
+
+  try {
+    const state = (await Promise.race([connection.connect(), timeoutPromise])) as Record<string, unknown>;
+    connected = true;
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+
+    const stateRoomId = typeof state.roomId === "string" ? state.roomId : String(state.roomId ?? "");
+    if (stateRoomId.trim()) {
+      roomId = stateRoomId.trim();
+    }
+    const infoRoot = asRecord(connection.roomInfo);
+    const infoData = asRecord(infoRoot?.data);
+    const titleRaw = infoData?.title;
+    const title = typeof titleRaw === "string" && titleRaw.trim() ? titleRaw.trim() : undefined;
+    const infoStats = asRecord(infoData?.stats);
+
+    viewerCount = Math.max(viewerCount, toNumber(infoStats?.user_count));
+    enterCount = Math.max(enterCount, toNumber(infoStats?.total_user));
+    likeCount = Math.max(likeCount, toNumber(infoStats?.like_count));
+
+    return {
+      username,
+      roomId: roomId || undefined,
+      title,
+      statusCode: 2,
+      isLive: true,
+      viewerCount: Math.max(0, viewerCount),
+      likeCount: Math.max(0, likeCount),
+      enterCount: Math.max(0, enterCount),
+      fetchedAt: new Date(),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "TikTok connector failed.";
+    if (isLikelyOfflineError(message)) {
+      return {
+        username,
+        isLive: false,
+        viewerCount: 0,
+        likeCount: 0,
+        enterCount: 0,
+        statusCode: 0,
+        fetchedAt: new Date(),
+      };
+    }
+    throw error instanceof Error ? error : new Error(message);
+  } finally {
+    if (connected) {
+      try {
+        await connection.disconnect();
+      } catch {
+        // ignore disconnect errors
+      }
+    }
+  }
+}
+
 async function fetchLiveSnapshotFromWebPage(username: string): Promise<LiveSnapshot> {
   const url = `https://www.tiktok.com/@${encodeURIComponent(username)}/live`;
   const response = await fetch(url, {
@@ -781,7 +887,11 @@ export async function fetchLiveSnapshotByUsername(rawUsername: string): Promise<
   }
 
   if (isServerlessRuntime()) {
-    return fetchLiveSnapshotFromWebPage(username);
+    try {
+      return await fetchLiveSnapshotFromConnector(username);
+    } catch {
+      return fetchLiveSnapshotFromWebPage(username);
+    }
   }
 
   try {
@@ -796,7 +906,11 @@ export async function fetchLiveSnapshotByUsername(rawUsername: string): Promise<
     });
     return normalizeSnapshotFromBridge(username, payload);
   } catch {
-    return fetchLiveSnapshotFromWebPage(username);
+    try {
+      return await fetchLiveSnapshotFromConnector(username);
+    } catch {
+      return fetchLiveSnapshotFromWebPage(username);
+    }
   }
 }
 

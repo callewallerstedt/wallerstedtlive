@@ -792,7 +792,7 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
     };
   }
 
-  if (!getPythonInvocation()) {
+  if (!serverlessMode && !getPythonInvocation()) {
     return {
       started: false,
       message: getPythonNotFoundMessage(),

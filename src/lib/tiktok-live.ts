@@ -12,7 +12,25 @@ type LiveSnapshot = {
   viewerCount: number;
   likeCount: number;
   enterCount: number;
+  comments: LiveCommentCapture[];
+  gifts: LiveGiftCapture[];
   fetchedAt: Date;
+};
+
+type LiveCommentCapture = {
+  createdAt: Date;
+  userUniqueId: string | null;
+  nickname: string | null;
+  comment: string;
+};
+
+type LiveGiftCapture = {
+  createdAt: Date;
+  userUniqueId: string | null;
+  nickname: string | null;
+  giftName: string | null;
+  diamondCount: number;
+  repeatCount: number;
 };
 
 type TrackLiveInput = {
@@ -121,6 +139,14 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
+function asNullableString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized ? normalized : null;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -219,6 +245,8 @@ function snapshotFromParsedLiveRoot(username: string, parsed: unknown): LiveSnap
     viewerCount: Math.max(0, toNumber(liveRoomStats?.userCount)),
     likeCount: 0,
     enterCount: Math.max(0, toNumber(liveRoomStats?.enterCount)),
+    comments: [],
+    gifts: [],
     fetchedAt: new Date(),
   };
 }
@@ -245,6 +273,8 @@ function snapshotFromLooseHtmlSignals(username: string, html: string): LiveSnaps
     viewerCount: userCountMatch ? Math.max(0, Number(userCountMatch[1])) : 0,
     likeCount: 0,
     enterCount: enterCountMatch ? Math.max(0, Number(enterCountMatch[1])) : 0,
+    comments: [],
+    gifts: [],
     fetchedAt: new Date(),
   };
 }
@@ -281,6 +311,10 @@ async function fetchLiveSnapshotFromConnector(username: string): Promise<LiveSna
   let viewerCount = 0;
   let enterCount = 0;
   let likeCount = 0;
+  const comments: LiveCommentCapture[] = [];
+  const gifts: LiveGiftCapture[] = [];
+  const maxComments = 160;
+  const maxGifts = 80;
 
   connection.on("roomUser", (event) => {
     viewerCount = Math.max(viewerCount, toNumber(event.viewerCount));
@@ -293,6 +327,43 @@ async function fetchLiveSnapshotFromConnector(username: string): Promise<LiveSna
 
   connection.on("like", (event) => {
     likeCount = Math.max(likeCount, toNumber(event.totalLikeCount));
+  });
+
+  connection.on("chat", (event) => {
+    if (comments.length >= maxComments) {
+      return;
+    }
+    const user = asRecord(event.user);
+    const comment = asNullableString(event.comment);
+    if (!comment) {
+      return;
+    }
+    comments.push({
+      createdAt: new Date(),
+      userUniqueId: asNullableString(event.uniqueId) ?? asNullableString(user?.uniqueId),
+      nickname: asNullableString(event.nickname) ?? asNullableString(user?.nickname),
+      comment,
+    });
+  });
+
+  connection.on("gift", (event) => {
+    if (gifts.length >= maxGifts) {
+      return;
+    }
+    // Skip incomplete streak updates; keep final gift event.
+    if (event.repeatEnd === false) {
+      return;
+    }
+    const user = asRecord(event.user);
+    const gift = asRecord(event.gift);
+    gifts.push({
+      createdAt: new Date(),
+      userUniqueId: asNullableString(event.uniqueId) ?? asNullableString(user?.uniqueId),
+      nickname: asNullableString(event.nickname) ?? asNullableString(user?.nickname),
+      giftName: asNullableString(event.giftName) ?? asNullableString(gift?.name),
+      diamondCount: Math.max(0, toNumber(event.diamondCount ?? gift?.diamondCount)),
+      repeatCount: Math.max(1, toNumber(event.repeatCount)),
+    });
   });
 
   let connected = false;
@@ -328,6 +399,8 @@ async function fetchLiveSnapshotFromConnector(username: string): Promise<LiveSna
       viewerCount: Math.max(0, viewerCount),
       likeCount: Math.max(0, likeCount),
       enterCount: Math.max(0, enterCount),
+      comments,
+      gifts,
       fetchedAt: new Date(),
     };
   } catch (error) {
@@ -340,6 +413,8 @@ async function fetchLiveSnapshotFromConnector(username: string): Promise<LiveSna
         likeCount: 0,
         enterCount: 0,
         statusCode: 0,
+        comments: [],
+        gifts: [],
         fetchedAt: new Date(),
       };
     }
@@ -532,6 +607,8 @@ function normalizeSnapshotFromBridge(username: string, payload: BridgePayload): 
     viewerCount: toNumber(payload.viewerCount),
     likeCount: toNumber(payload.likeCount),
     enterCount: toNumber(payload.enterCount),
+    comments: [],
+    gifts: [],
     fetchedAt,
   };
 }
@@ -977,6 +1054,8 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
       viewerCount: 0,
       likeCount: 0,
       enterCount: 0,
+      comments: [],
+      gifts: [],
       fetchedAt: new Date(),
     };
     usedFallbackSnapshot = true;
@@ -1000,6 +1079,12 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
   const durationSec = durationRaw <= 0 ? 0 : Math.max(15, Math.min(21600, durationRaw));
   const pollIntervalSec = clampSampleIntervalSec(input.pollIntervalSec, 0.5);
   const collectChatEvents = Boolean(input.collectChatEvents);
+  const initialComments = snapshot?.comments ?? [];
+  const initialGifts = snapshot?.gifts ?? [];
+  const initialGiftDiamonds = initialGifts.reduce(
+    (sum, gift) => sum + Math.max(0, gift.diamondCount) * Math.max(1, gift.repeatCount),
+    0
+  );
 
   const session = await prisma.tikTokLiveSession.create({
     data: {
@@ -1014,9 +1099,9 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
       viewerCountAvg: snapshot?.viewerCount ?? 0,
       likeCountLatest: snapshot?.likeCount ?? 0,
       enterCountLatest: snapshot?.enterCount ?? 0,
-      totalCommentEvents: 0,
-      totalGiftEvents: 0,
-      totalGiftDiamonds: 0,
+      totalCommentEvents: initialComments.length,
+      totalGiftEvents: initialGifts.length,
+      totalGiftDiamonds: initialGiftDiamonds,
       warnings: null,
       error: usedFallbackSnapshot ? snapshotFailureMessage || "Live page parse fallback in use." : null,
     },
@@ -1031,6 +1116,32 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
       enterCount: snapshot?.enterCount ?? 0,
     },
   });
+
+  if (initialComments.length > 0) {
+    await prisma.tikTokLiveComment.createMany({
+      data: initialComments.map((comment) => ({
+        sessionId: session.id,
+        createdAt: comment.createdAt,
+        userUniqueId: comment.userUniqueId,
+        nickname: comment.nickname,
+        comment: comment.comment,
+      })),
+    });
+  }
+
+  if (initialGifts.length > 0) {
+    await prisma.tikTokLiveGift.createMany({
+      data: initialGifts.map((gift) => ({
+        sessionId: session.id,
+        createdAt: gift.createdAt,
+        userUniqueId: gift.userUniqueId,
+        nickname: gift.nickname,
+        giftName: gift.giftName,
+        diamondCount: gift.diamondCount,
+        repeatCount: gift.repeatCount,
+      })),
+    });
+  }
 
   if (serverlessMode) {
     return {
@@ -1154,6 +1265,9 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
       viewerCountAvg: true,
       likeCountLatest: true,
       enterCountLatest: true,
+      totalCommentEvents: true,
+      totalGiftEvents: true,
+      totalGiftDiamonds: true,
       roomId: true,
       title: true,
       statusCode: true,
@@ -1172,6 +1286,12 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
   const avg = Number(
     ((activeSession.viewerCountAvg * sampleCount + snapshot.viewerCount) / Math.max(1, nextSampleCount)).toFixed(2)
   );
+  const capturedComments = snapshot.comments ?? [];
+  const capturedGifts = snapshot.gifts ?? [];
+  const capturedDiamonds = capturedGifts.reduce(
+    (sum, gift) => sum + Math.max(0, gift.diamondCount) * Math.max(1, gift.repeatCount),
+    0
+  );
 
   await prisma.tikTokLiveSample.create({
     data: {
@@ -1182,6 +1302,32 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
       enterCount: snapshot.enterCount,
     },
   });
+
+  if (capturedComments.length > 0) {
+    await prisma.tikTokLiveComment.createMany({
+      data: capturedComments.map((comment) => ({
+        sessionId: activeSession.id,
+        createdAt: comment.createdAt,
+        userUniqueId: comment.userUniqueId,
+        nickname: comment.nickname,
+        comment: comment.comment,
+      })),
+    });
+  }
+
+  if (capturedGifts.length > 0) {
+    await prisma.tikTokLiveGift.createMany({
+      data: capturedGifts.map((gift) => ({
+        sessionId: activeSession.id,
+        createdAt: gift.createdAt,
+        userUniqueId: gift.userUniqueId,
+        nickname: gift.nickname,
+        giftName: gift.giftName,
+        diamondCount: gift.diamondCount,
+        repeatCount: gift.repeatCount,
+      })),
+    });
+  }
 
   await prisma.tikTokLiveSession.update({
     where: { id: activeSession.id },
@@ -1194,6 +1340,9 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
       viewerCountAvg: avg,
       likeCountLatest: snapshot.likeCount > 0 ? snapshot.likeCount : activeSession.likeCountLatest,
       enterCountLatest: Math.max(activeSession.enterCountLatest, snapshot.enterCount),
+      totalCommentEvents: activeSession.totalCommentEvents + capturedComments.length,
+      totalGiftEvents: activeSession.totalGiftEvents + capturedGifts.length,
+      totalGiftDiamonds: activeSession.totalGiftDiamonds + capturedDiamonds,
       ...(snapshot.isLive ? { error: null } : {}),
       ...(snapshot.isLive ? {} : { endedAt: new Date(), error: "User is currently offline." }),
     },

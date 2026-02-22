@@ -121,6 +121,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function isServerlessRuntime(): boolean {
   return process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
 }
@@ -171,6 +175,80 @@ function getPythonInvocation(): PythonInvocation | null {
   return cachedPythonInvocation;
 }
 
+function extractScriptJsonById(html: string, id: string): unknown | null {
+  const pattern = new RegExp(
+    `<script[^>]*id=["']${escapeRegExp(id)}["'][^>]*>([\\s\\S]*?)<\\/script>`,
+    "i"
+  );
+  const match = html.match(pattern);
+  if (!match?.[1]) {
+    return null;
+  }
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+function snapshotFromParsedLiveRoot(username: string, parsed: unknown): LiveSnapshot | null {
+  const root = asRecord(parsed);
+  if (!root) {
+    return null;
+  }
+
+  const liveRoomRoot = asRecord(root.LiveRoom);
+  const liveRoomUserInfo = asRecord(liveRoomRoot?.liveRoomUserInfo);
+  const liveRoom = asRecord(liveRoomUserInfo?.liveRoom);
+  const liveRoomStats = asRecord(liveRoom?.liveRoomStats);
+
+  if (!liveRoom) {
+    return null;
+  }
+
+  const status = toNumber(liveRoom.status);
+  const roomIdRaw = liveRoom.streamId;
+  const titleRaw = liveRoom.title;
+
+  return {
+    username,
+    roomId: typeof roomIdRaw === "string" && roomIdRaw.trim() ? roomIdRaw.trim() : undefined,
+    title: typeof titleRaw === "string" && titleRaw.trim() ? titleRaw.trim() : undefined,
+    statusCode: status || undefined,
+    isLive: status === 2,
+    viewerCount: Math.max(0, toNumber(liveRoomStats?.userCount)),
+    likeCount: 0,
+    enterCount: Math.max(0, toNumber(liveRoomStats?.enterCount)),
+    fetchedAt: new Date(),
+  };
+}
+
+function snapshotFromLooseHtmlSignals(username: string, html: string): LiveSnapshot | null {
+  const statusMatch = html.match(/"status"\s*:\s*(\d+)/);
+  const userCountMatch = html.match(/"userCount"\s*:\s*(\d+)/);
+  const enterCountMatch = html.match(/"enterCount"\s*:\s*(\d+)/);
+  const streamIdMatch = html.match(/"streamId"\s*:\s*"([^"]+)"/);
+  const titleMatch = html.match(/"title"\s*:\s*"([^"]+)"/);
+  const pageTitleLive = /is\s+LIVE\s+-\s+TikTok\s+LIVE/i.test(html);
+
+  const status = statusMatch ? Number(statusMatch[1]) : pageTitleLive ? 2 : 0;
+  if (!status && !pageTitleLive) {
+    return null;
+  }
+
+  return {
+    username,
+    roomId: streamIdMatch?.[1] ? streamIdMatch[1] : undefined,
+    title: titleMatch?.[1] ? titleMatch[1] : undefined,
+    statusCode: status || undefined,
+    isLive: status === 2 || pageTitleLive,
+    viewerCount: userCountMatch ? Math.max(0, Number(userCountMatch[1])) : 0,
+    likeCount: 0,
+    enterCount: enterCountMatch ? Math.max(0, Number(enterCountMatch[1])) : 0,
+    fetchedAt: new Date(),
+  };
+}
+
 async function fetchLiveSnapshotFromWebPage(username: string): Promise<LiveSnapshot> {
   const url = `https://www.tiktok.com/@${encodeURIComponent(username)}/live`;
   const response = await fetch(url, {
@@ -187,37 +265,27 @@ async function fetchLiveSnapshotFromWebPage(username: string): Promise<LiveSnaps
   }
 
   const html = await response.text();
-  const match = html.match(/<script id="SIGI_STATE" type="application\/json">([\s\S]*?)<\/script>/);
-  if (!match?.[1]) {
-    throw new Error("TikTok live page did not include SIGI_STATE.");
+  const sigi = extractScriptJsonById(html, "SIGI_STATE");
+  const sigiSnapshot = snapshotFromParsedLiveRoot(username, sigi);
+  if (sigiSnapshot) {
+    return sigiSnapshot;
   }
 
-  const parsed = JSON.parse(match[1]) as Record<string, unknown>;
-  const liveRoomRoot = asRecord(parsed.LiveRoom);
-  const liveRoomUserInfo = asRecord(liveRoomRoot?.liveRoomUserInfo);
-  const liveRoom = asRecord(liveRoomUserInfo?.liveRoom);
-  const liveRoomStats = asRecord(liveRoom?.liveRoomStats);
+  const rehydration = extractScriptJsonById(html, "__UNIVERSAL_DATA_FOR_REHYDRATION__");
+  const rehydrationRoot = asRecord(rehydration);
+  const defaultScope = asRecord(rehydrationRoot?.__DEFAULT_SCOPE__);
+  const liveDetail = asRecord(defaultScope?.["webapp.live-detail"]);
+  const liveDetailSnapshot = snapshotFromParsedLiveRoot(username, liveDetail);
+  if (liveDetailSnapshot) {
+    return liveDetailSnapshot;
+  }
 
-  const status = toNumber(liveRoom?.status);
-  const isLive = status === 2;
-  const viewerCount = Math.max(0, toNumber(liveRoomStats?.userCount));
-  const enterCount = Math.max(0, toNumber(liveRoomStats?.enterCount));
-  const roomIdRaw = liveRoom?.streamId;
-  const roomId = typeof roomIdRaw === "string" && roomIdRaw.trim() ? roomIdRaw.trim() : undefined;
-  const titleRaw = liveRoom?.title;
-  const title = typeof titleRaw === "string" && titleRaw.trim() ? titleRaw.trim() : undefined;
+  const looseSnapshot = snapshotFromLooseHtmlSignals(username, html);
+  if (looseSnapshot) {
+    return looseSnapshot;
+  }
 
-  return {
-    username,
-    roomId,
-    title,
-    statusCode: status || undefined,
-    isLive,
-    viewerCount,
-    likeCount: 0,
-    enterCount,
-    fetchedAt: new Date(),
-  };
+  throw new Error("TikTok live page did not include parsable live state data.");
 }
 
 function parseJsonFromStdout(stdout: string): BridgePayload {

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { LiveDashboardState, OverlayGoalsState, StreamOverlayMode, StreamOverlayState } from "@/lib/types";
 
@@ -320,6 +320,11 @@ export function StreamControl() {
   const isGoalsRefreshInFlightRef = useRef(false);
   const goalsInitializedRef = useRef(false);
   const usernameInputFocusedRef = useRef(false);
+  const panelTabsRef = useRef<HTMLDivElement | null>(null);
+  const panelTabsDraggingRef = useRef(false);
+  const panelTabsDragMovedRef = useRef(false);
+  const panelTabsDragStartXRef = useRef(0);
+  const panelTabsScrollLeftRef = useRef(0);
 
   const youtubePlayerSrc = useMemo(() => (youtubeResult ? toYouTubePlayerSrc(youtubeResult.embedUrl) : null), [youtubeResult]);
 
@@ -817,9 +822,9 @@ export function StreamControl() {
     { id: "songs", label: "Song Picker", hint: `${filteredTracks.length} tracks` },
     { id: "donors", label: "Thank Donor", hint: `${gifts.length} gifts` },
     { id: "goals", label: "Goals", hint: overlayGoals && (overlayGoals.showLikeGoal || overlayGoals.showDonationGoal) ? "displaying" : "hidden" },
+    { id: "monitor", label: "Monitor", hint: activeSession && !activeSession.endedAt ? "live" : "idle" },
     { id: "ctas", label: "CTAs", hint: `${ctaPresets.length || ctaOrder.length} presets` },
     { id: "custom", label: "Custom", hint: "manual text" },
-    { id: "monitor", label: "Monitor", hint: activeSession && !activeSession.endedAt ? "live" : "idle" },
   ];
 
   const sendYoutubeCommand = useCallback((command: "playVideo" | "pauseVideo") => {
@@ -858,6 +863,43 @@ export function StreamControl() {
       stopAutoplayBoost();
     }, 15000);
   }, [sendYoutubeCommand, stopAutoplayBoost]);
+
+  function handlePanelTabMouseDown(event: MouseEvent<HTMLDivElement>) {
+    const node = panelTabsRef.current;
+    if (!node) {
+      return;
+    }
+    panelTabsDraggingRef.current = true;
+    panelTabsDragMovedRef.current = false;
+    panelTabsDragStartXRef.current = event.pageX - node.offsetLeft;
+    panelTabsScrollLeftRef.current = node.scrollLeft;
+  }
+
+  function handlePanelTabMouseMove(event: MouseEvent<HTMLDivElement>) {
+    const node = panelTabsRef.current;
+    if (!node || !panelTabsDraggingRef.current) {
+      return;
+    }
+    event.preventDefault();
+    const x = event.pageX - node.offsetLeft;
+    const walk = x - panelTabsDragStartXRef.current;
+    if (Math.abs(walk) > 4) {
+      panelTabsDragMovedRef.current = true;
+    }
+    node.scrollLeft = panelTabsScrollLeftRef.current - walk;
+  }
+
+  function handlePanelTabMouseUpOrLeave() {
+    panelTabsDraggingRef.current = false;
+  }
+
+  function handlePanelTabClick(panelId: PanelId) {
+    if (panelTabsDragMovedRef.current) {
+      panelTabsDragMovedRef.current = false;
+      return;
+    }
+    setActivePanel(panelId);
+  }
 
   function playYoutube() {
     sendYoutubeCommand("playVideo");
@@ -1487,12 +1529,19 @@ export function StreamControl() {
 
           <main className="min-h-0 rounded-2xl border border-stone-700 bg-stone-900 p-3 lg:col-span-2">
             <div className="flex h-full flex-col gap-3">
-              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              <div
+                ref={panelTabsRef}
+                onMouseDown={handlePanelTabMouseDown}
+                onMouseMove={handlePanelTabMouseMove}
+                onMouseUp={handlePanelTabMouseUpOrLeave}
+                onMouseLeave={handlePanelTabMouseUpOrLeave}
+                className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none cursor-grab active:cursor-grabbing"
+              >
                 {panelButtons.map((panel) => (
                   <button
                     key={panel.id}
-                    onClick={() => setActivePanel(panel.id)}
-                    className={`min-h-14 min-w-[8.75rem] flex-1 rounded-xl border px-3 py-3 text-left transition md:min-w-[9.5rem] ${activePanel === panel.id ? "border-amber-300/60 bg-amber-300/10" : "border-stone-700 bg-stone-950 hover:border-stone-500"}`}
+                    onClick={() => handlePanelTabClick(panel.id)}
+                    className={`min-h-14 min-w-[8.75rem] shrink-0 rounded-xl border px-3 py-3 text-left transition md:min-w-[9.5rem] ${activePanel === panel.id ? "border-amber-300/60 bg-amber-300/10" : "border-stone-700 bg-stone-950 hover:border-stone-500"}`}
                   >
                     <p className="text-sm font-semibold text-stone-100">{panel.label}</p>
                     <p className="mt-1 text-xs text-stone-400">{panel.hint}</p>

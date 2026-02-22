@@ -255,7 +255,7 @@ function MonitorTrendChart({ title, summary, points, strokeColor, gradientId, va
     : null;
 
   return (
-    <article className="relative z-10 isolate rounded-xl border border-stone-700 bg-stone-900/95 p-3">
+    <article className="rounded-xl border border-stone-700 bg-stone-900/95 p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-stone-500">{title}</p>
@@ -809,51 +809,71 @@ export function StreamControl() {
     if (!activeSession) {
       return [] as LiveDashboardState["liveSessions"][number]["samples"];
     }
-    return [...activeSession.samples]
-      .sort((a, b) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime())
-      .slice(-200);
+    return [...activeSession.samples].sort((a, b) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime());
   }, [activeSession]);
 
-  const viewerCurve = useMemo(
-    () => sortedSamples.map((sample) => ({ label: formatDateTime(sample.capturedAt), value: sample.viewerCount })),
-    [sortedSamples]
-  );
-  const likeCurve = useMemo(
-    () => sortedSamples.map((sample) => ({ label: formatDateTime(sample.capturedAt), value: sample.likeCount })),
-    [sortedSamples]
-  );
-  const commentCurve = useMemo(() => {
-    if (!activeSession || sortedSamples.length === 0) {
-      return [] as ChartPoint[];
+  const monitorCurves = useMemo(() => {
+    if (!activeSession) {
+      return {
+        viewerCurve: [] as ChartPoint[],
+        likeCurve: [] as ChartPoint[],
+        commentCurve: [] as ChartPoint[],
+        giftCurve: [] as ChartPoint[],
+      };
     }
-    const sortedComments = [...activeSession.comments].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    let commentIndex = 0;
-    let runningCount = 0;
-    return sortedSamples.map((sample) => {
-      const sampleTime = new Date(sample.capturedAt).getTime();
-      while (commentIndex < sortedComments.length && new Date(sortedComments[commentIndex].createdAt).getTime() <= sampleTime) {
-        runningCount += 1;
-        commentIndex += 1;
-      }
-      return { label: formatDateTime(sample.capturedAt), value: runningCount };
-    });
-  }, [activeSession, sortedSamples]);
-  const giftCurve = useMemo(() => {
-    if (!activeSession || sortedSamples.length === 0) {
-      return [] as ChartPoint[];
+
+    const startMs = new Date(activeSession.startedAt).getTime();
+    const endMs = activeSession.endedAt ? new Date(activeSession.endedAt).getTime() : Date.now();
+    const spanMs = Math.max(60_000, endMs - startMs);
+    const bucketSizeMs = 60_000;
+    const bucketCount = Math.max(1, Math.min(720, Math.ceil(spanMs / bucketSizeMs)));
+
+    const viewerBuckets = new Array<number>(bucketCount).fill(0);
+    const likeBuckets = new Array<number>(bucketCount).fill(0);
+    const commentBuckets = new Array<number>(bucketCount).fill(0);
+    const giftBuckets = new Array<number>(bucketCount).fill(0);
+
+    for (const sample of sortedSamples) {
+      const sampleMs = new Date(sample.capturedAt).getTime();
+      const bucket = Math.max(0, Math.min(bucketCount - 1, Math.floor((sampleMs - startMs) / bucketSizeMs)));
+      viewerBuckets[bucket] = sample.viewerCount;
+      likeBuckets[bucket] = Math.max(likeBuckets[bucket], sample.likeCount);
     }
-    const sortedGifts = [...activeSession.gifts].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    let giftIndex = 0;
-    let runningCount = 0;
-    return sortedSamples.map((sample) => {
-      const sampleTime = new Date(sample.capturedAt).getTime();
-      while (giftIndex < sortedGifts.length && new Date(sortedGifts[giftIndex].createdAt).getTime() <= sampleTime) {
-        runningCount += 1;
-        giftIndex += 1;
-      }
-      return { label: formatDateTime(sample.capturedAt), value: runningCount };
+
+    for (let i = 1; i < bucketCount; i += 1) {
+      if (viewerBuckets[i] === 0) viewerBuckets[i] = viewerBuckets[i - 1];
+      if (likeBuckets[i] === 0) likeBuckets[i] = likeBuckets[i - 1];
+    }
+
+    for (const comment of activeSession.comments) {
+      const t = new Date(comment.createdAt).getTime();
+      const bucket = Math.max(0, Math.min(bucketCount - 1, Math.floor((t - startMs) / bucketSizeMs)));
+      commentBuckets[bucket] += 1;
+    }
+    for (const gift of activeSession.gifts) {
+      const t = new Date(gift.createdAt).getTime();
+      const bucket = Math.max(0, Math.min(bucketCount - 1, Math.floor((t - startMs) / bucketSizeMs)));
+      giftBuckets[bucket] += 1;
+    }
+
+    const viewerCurve = viewerBuckets.map((value, i) => ({ label: `${i}m`, value }));
+    const likeCurve = likeBuckets.map((value, i) => ({ label: `${i}m`, value }));
+
+    let commentsRunning = 0;
+    let giftsRunning = 0;
+    const commentCurve = commentBuckets.map((value, i) => {
+      commentsRunning += value;
+      return { label: `${i}m`, value: commentsRunning };
     });
+    const giftCurve = giftBuckets.map((value, i) => {
+      giftsRunning += value;
+      return { label: `${i}m`, value: giftsRunning };
+    });
+
+    return { viewerCurve, likeCurve, commentCurve, giftCurve };
   }, [activeSession, sortedSamples]);
+
+  const { viewerCurve, likeCurve, commentCurve, giftCurve } = monitorCurves;
 
   const viewerMax = useMemo(() => {
     if (viewerCurve.length === 0) {
@@ -2150,7 +2170,7 @@ export function StreamControl() {
                     </div>
 
                     <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-                      <div className="relative z-10 grid min-h-0 grid-cols-1 gap-3">
+                      <div className="grid min-h-0 grid-cols-1 gap-3">
                         <MonitorTrendChart
                           title="Viewer Curve"
                           summary={`Current ${currentViewerCount.toLocaleString()} | Min ${viewerMin.toLocaleString()} | Max ${viewerMax.toLocaleString()}`}
@@ -2185,7 +2205,7 @@ export function StreamControl() {
                         />
                       </div>
 
-                      <div className="relative z-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1">
+                      <div className="grid grid-cols-1 gap-3 xl:grid-cols-1">
                         <article className="rounded-xl border border-stone-700 bg-stone-900/90 p-3">
                           <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Audience Performance</p>
                           <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">

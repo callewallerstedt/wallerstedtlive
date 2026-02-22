@@ -47,16 +47,16 @@ export async function GET(request: Request) {
             take: 20,
             include: {
               samples: {
-                orderBy: { capturedAt: "desc" },
-                take: 600,
+                orderBy: { capturedAt: "asc" },
+                take: 5000,
               },
               comments: {
-                orderBy: { createdAt: "desc" },
-                take: 800,
+                orderBy: { createdAt: "asc" },
+                take: 2000,
               },
               gifts: {
-                orderBy: { createdAt: "desc" },
-                take: 800,
+                orderBy: { createdAt: "asc" },
+                take: 2000,
               },
             },
           }),

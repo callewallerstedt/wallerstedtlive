@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { LiveDashboardState } from "@/lib/types";
 
@@ -78,7 +78,9 @@ function StatLineChart({
   points: ChartPoint[];
   valueLabel?: string;
 }) {
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [hover, setHover] = useState<{ x: number; index: number } | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const pendingHoverRef = useRef<{ x: number; index: number } | null>(null);
   const width = 720;
   const height = 230;
   const padding = 26;
@@ -87,10 +89,43 @@ function StatLineChart({
   const safeMax = Math.max(maxValue, 1);
   const innerWidth = width - padding * 2;
   const xStep = points.length > 1 ? innerWidth / (points.length - 1) : 0;
-  const hoveredPoint = hoverIndex !== null ? points[hoverIndex] : null;
-  const hoveredX = hoverIndex !== null ? padding + (xStep > 0 ? hoverIndex * xStep : 0) : null;
-  const hoveredY =
-    hoveredPoint && hoveredX !== null ? pointY(hoveredPoint.value, safeMax, height, padding) : null;
+
+  const scheduleHover = (nextHover: { x: number; index: number } | null) => {
+    pendingHoverRef.current = nextHover;
+    if (rafRef.current !== null) {
+      return;
+    }
+    rafRef.current = window.requestAnimationFrame(() => {
+      rafRef.current = null;
+      setHover((current) => {
+        const pending = pendingHoverRef.current;
+        if (current === null && pending === null) {
+          return current;
+        }
+        if (
+          current &&
+          pending &&
+          current.index === pending.index &&
+          Math.abs(current.x - pending.x) < 0.5
+        ) {
+          return current;
+        }
+        return pending;
+      });
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) {
+        window.cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, []);
+
+  const hoveredPoint = hover !== null ? points[hover.index] : null;
+  const hoveredX = hover?.x ?? null;
+  const hoveredY = hoveredPoint ? pointY(hoveredPoint.value, safeMax, height, padding) : null;
 
   return (
     <article className="rounded-xl border border-stone-700 bg-stone-900 p-4">
@@ -101,14 +136,23 @@ function StatLineChart({
       {points.length > 0 ? (
         <svg
           viewBox={`0 0 ${width} ${height}`}
-          className="mt-3 h-44 w-full"
-          onMouseMove={(event) => {
+          className="mt-3 h-44 w-full touch-none select-none"
+          style={{ touchAction: "none" }}
+          onPointerDown={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
             const relativeX = ((event.clientX - rect.left) / rect.width) * width;
-            const raw = xStep > 0 ? Math.round((relativeX - padding) / xStep) : 0;
-            setHoverIndex(clamp(raw, 0, points.length - 1));
+            const clampedX = clamp(relativeX, padding, width - padding);
+            const raw = xStep > 0 ? Math.round((clampedX - padding) / xStep) : 0;
+            scheduleHover({ x: clampedX, index: clamp(raw, 0, points.length - 1) });
           }}
-          onMouseLeave={() => setHoverIndex(null)}
+          onPointerMove={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const relativeX = ((event.clientX - rect.left) / rect.width) * width;
+            const clampedX = clamp(relativeX, padding, width - padding);
+            const raw = xStep > 0 ? Math.round((clampedX - padding) / xStep) : 0;
+            scheduleHover({ x: clampedX, index: clamp(raw, 0, points.length - 1) });
+          }}
+          onPointerLeave={() => scheduleHover(null)}
         >
           <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#44403c" />
           <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#44403c" />
@@ -167,7 +211,9 @@ function EventTimelineChart({
   secondaryDotClass: string;
   secondary: ChartPoint[];
 }) {
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [hover, setHover] = useState<{ x: number; index: number } | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const pendingHoverRef = useRef<{ x: number; index: number } | null>(null);
   const width = 720;
   const height = 230;
   const padding = 26;
@@ -179,13 +225,45 @@ function EventTimelineChart({
   const pointsLength = Math.max(primary.length, secondary.length);
   const innerWidth = width - padding * 2;
   const xStep = pointsLength > 1 ? innerWidth / (pointsLength - 1) : 0;
-  const hoveredPrimary = hoverIndex !== null ? primary[hoverIndex] : null;
-  const hoveredSecondary = hoverIndex !== null ? secondary[hoverIndex] : null;
-  const hoveredX = hoverIndex !== null ? padding + (xStep > 0 ? hoverIndex * xStep : 0) : null;
-  const hoveredPrimaryY =
-    hoveredPrimary && hoveredX !== null ? pointY(hoveredPrimary.value, safeMax, height, padding) : null;
-  const hoveredSecondaryY =
-    hoveredSecondary && hoveredX !== null ? pointY(hoveredSecondary.value, safeMax, height, padding) : null;
+
+  const scheduleHover = (nextHover: { x: number; index: number } | null) => {
+    pendingHoverRef.current = nextHover;
+    if (rafRef.current !== null) {
+      return;
+    }
+    rafRef.current = window.requestAnimationFrame(() => {
+      rafRef.current = null;
+      setHover((current) => {
+        const pending = pendingHoverRef.current;
+        if (current === null && pending === null) {
+          return current;
+        }
+        if (
+          current &&
+          pending &&
+          current.index === pending.index &&
+          Math.abs(current.x - pending.x) < 0.5
+        ) {
+          return current;
+        }
+        return pending;
+      });
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) {
+        window.cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, []);
+
+  const hoveredPrimary = hover !== null ? primary[hover.index] : null;
+  const hoveredSecondary = hover !== null ? secondary[hover.index] : null;
+  const hoveredX = hover?.x ?? null;
+  const hoveredPrimaryY = hoveredPrimary ? pointY(hoveredPrimary.value, safeMax, height, padding) : null;
+  const hoveredSecondaryY = hoveredSecondary ? pointY(hoveredSecondary.value, safeMax, height, padding) : null;
   const hoverLabel = hoveredPrimary?.label ?? hoveredSecondary?.label;
 
   return (
@@ -197,14 +275,23 @@ function EventTimelineChart({
       {primary.length > 0 ? (
         <svg
           viewBox={`0 0 ${width} ${height}`}
-          className="mt-3 h-44 w-full"
-          onMouseMove={(event) => {
+          className="mt-3 h-44 w-full touch-none select-none"
+          style={{ touchAction: "none" }}
+          onPointerDown={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
             const relativeX = ((event.clientX - rect.left) / rect.width) * width;
-            const raw = xStep > 0 ? Math.round((relativeX - padding) / xStep) : 0;
-            setHoverIndex(clamp(raw, 0, Math.max(0, pointsLength - 1)));
+            const clampedX = clamp(relativeX, padding, width - padding);
+            const raw = xStep > 0 ? Math.round((clampedX - padding) / xStep) : 0;
+            scheduleHover({ x: clampedX, index: clamp(raw, 0, Math.max(0, pointsLength - 1)) });
           }}
-          onMouseLeave={() => setHoverIndex(null)}
+          onPointerMove={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const relativeX = ((event.clientX - rect.left) / rect.width) * width;
+            const clampedX = clamp(relativeX, padding, width - padding);
+            const raw = xStep > 0 ? Math.round((clampedX - padding) / xStep) : 0;
+            scheduleHover({ x: clampedX, index: clamp(raw, 0, Math.max(0, pointsLength - 1)) });
+          }}
+          onPointerLeave={() => scheduleHover(null)}
         >
           <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#44403c" />
           <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#44403c" />

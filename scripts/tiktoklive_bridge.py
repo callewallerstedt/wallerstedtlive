@@ -78,13 +78,14 @@ def find_max_int(data: Any, keys: set[str]) -> int:
 
 
 def parse_current_viewers_from_room_info(room_info: Dict[str, Any]) -> int:
-    # Current concurrent viewer signals (avoid cumulative totals like total_user).
+    # Prefer explicit concurrent-viewer keys from room_info.
+    # NOTE: `user_count` is often inflated for some rooms and does not reliably
+    # match the on-screen live viewer count, so we intentionally ignore it.
     return max(
         0,
         find_max_int(
             room_info,
             {
-                "user_count",
                 "watch_user_count",
                 "viewer_count",
                 "viewerCount",
@@ -279,7 +280,9 @@ async def bootstrap_client(
     room_info = client.room_info or {}
     state.room_id = state.room_id or (str(client.room_id) if client.room_id else None)
     state.title = find_first_string(room_info, {"title", "room_title", "live_title"})
-    state.current_viewers = max(state.current_viewers, parse_current_viewers_from_room_info(room_info))
+    room_info_viewers = parse_current_viewers_from_room_info(room_info)
+    if state.current_viewers <= 0 and room_info_viewers > 0:
+        state.current_viewers = room_info_viewers
     state.current_likes = max(
         state.current_likes,
         find_max_int(room_info, {"like_count", "likeCount", "m_popularity", "total_like", "likes"}),

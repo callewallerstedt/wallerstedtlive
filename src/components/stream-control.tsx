@@ -562,6 +562,18 @@ export function StreamControl() {
   }
 
   async function updateOverlay(payload: OverlayUpdatePayload) {
+    const previousOverlay = overlayState;
+    const optimisticOverlay: StreamOverlayState = {
+      mode: payload.mode ?? previousOverlay.mode,
+      title: payload.title ?? previousOverlay.title,
+      subtitle: payload.subtitle ?? previousOverlay.subtitle,
+      accentColor: payload.accentColor ?? previousOverlay.accentColor,
+      mediaImageUrl: payload.mediaImageUrl ?? previousOverlay.mediaImageUrl,
+      updatedAt: new Date().toISOString(),
+      updatedBy: payload.updatedBy ?? "ipad",
+    };
+    setOverlayState(optimisticOverlay);
+
     const response = await fetch("/api/overlay/state", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -569,17 +581,40 @@ export function StreamControl() {
     });
     const result = (await response.json()) as unknown;
     if (!response.ok) {
+      setOverlayState(previousOverlay);
       const root = asRecord(result);
       throw new Error(typeof root?.error === "string" ? root.error : "Overlay update failed");
     }
     const parsed = parseOverlayState(result);
     if (!parsed) {
+      setOverlayState(previousOverlay);
       throw new Error("Overlay update payload invalid");
     }
     setOverlayState(parsed);
   }
 
   async function updateGoals(payload: GoalsUpdatePayload) {
+    if (!overlayGoals) {
+      throw new Error("Goals are not loaded yet");
+    }
+    const previousGoals = overlayGoals;
+    const optimisticGoals: OverlayGoalsState = {
+      ...previousGoals,
+      likeGoalTarget: payload.likeGoalTarget ?? previousGoals.likeGoalTarget,
+      donationGoalTarget: payload.donationGoalTarget ?? previousGoals.donationGoalTarget,
+      showLikeGoal: payload.showLikeGoal ?? previousGoals.showLikeGoal,
+      showDonationGoal: payload.showDonationGoal ?? previousGoals.showDonationGoal,
+      autoLikeEnabled: payload.autoLikeEnabled ?? previousGoals.autoLikeEnabled,
+      autoLikeEveryLikes: payload.autoLikeEveryLikes ?? previousGoals.autoLikeEveryLikes,
+      autoLikeTriggerWithin: payload.autoLikeTriggerWithin ?? previousGoals.autoLikeTriggerWithin,
+      autoLikeTextTemplate: payload.autoLikeTextTemplate ?? previousGoals.autoLikeTextTemplate,
+      autoLikeSubtextTemplate: payload.autoLikeSubtextTemplate ?? previousGoals.autoLikeSubtextTemplate,
+      autoLikeShowProgress: payload.autoLikeShowProgress ?? previousGoals.autoLikeShowProgress,
+      updatedAt: new Date().toISOString(),
+      updatedBy: payload.updatedBy ?? "ipad",
+    };
+    setOverlayGoals(optimisticGoals);
+
     const response = await fetch("/api/overlay/goals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -587,11 +622,13 @@ export function StreamControl() {
     });
     const result = (await response.json()) as unknown;
     if (!response.ok) {
+      setOverlayGoals(previousGoals);
       const root = asRecord(result);
       throw new Error(typeof root?.error === "string" ? root.error : "Goal update failed");
     }
     const parsed = parseOverlayGoals(result);
     if (!parsed) {
+      setOverlayGoals(previousGoals);
       throw new Error("Goal update payload invalid");
     }
     setOverlayGoals(parsed);
@@ -813,7 +850,7 @@ export function StreamControl() {
   }, [activeSession]);
 
   const monitorCurves = useMemo(() => {
-    if (!activeSession) {
+    if (activePanel !== "monitor" || !activeSession) {
       return {
         viewerCurve: [] as ChartPoint[],
         likeCurve: [] as ChartPoint[],
@@ -871,7 +908,7 @@ export function StreamControl() {
     });
 
     return { viewerCurve, likeCurve, commentCurve, giftCurve };
-  }, [activeSession, sortedSamples]);
+  }, [activePanel, activeSession, sortedSamples]);
 
   const { viewerCurve, likeCurve, commentCurve, giftCurve } = monitorCurves;
 
@@ -1023,7 +1060,7 @@ export function StreamControl() {
     window.setTimeout(() => {
       sendYoutubeCommand("playVideo");
     }, 880);
-    autoplayIntervalRef.current = window.setInterval(attemptPlay, 260);
+    autoplayIntervalRef.current = window.setInterval(attemptPlay, 700);
     autoplayStopTimeoutRef.current = window.setTimeout(() => {
       stopAutoplayBoost();
     }, 15000);
@@ -1118,7 +1155,7 @@ export function StreamControl() {
     }
     const keepAlive = window.setInterval(() => {
       sendYoutubeCommand("playVideo");
-    }, 1200);
+    }, 3000);
     return () => {
       window.clearInterval(keepAlive);
     };

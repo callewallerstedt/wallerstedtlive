@@ -419,6 +419,8 @@ export function StreamControl() {
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [leftPanePercent, setLeftPanePercent] = useState(34);
   const [isResizingPanes, setIsResizingPanes] = useState(false);
+  const resizeRafRef = useRef<number | null>(null);
+  const pendingPanePercentRef = useRef<number | null>(null);
   const isCoverFetchInFlightRef = useRef(false);
   const isOverlayRefreshInFlightRef = useRef(false);
   const isLiveRefreshInFlightRef = useRef(false);
@@ -669,7 +671,7 @@ export function StreamControl() {
       refreshLiveState(true, runtimeHint).catch(() => undefined).finally(() => {
         isLiveRefreshInFlightRef.current = false;
       });
-    }, 1000);
+    }, 700);
     const goalsTimer = setInterval(() => {
       if (isGoalsRefreshInFlightRef.current) {
         return;
@@ -1020,7 +1022,15 @@ export function StreamControl() {
     function onMove(clientX: number) {
       const viewport = window.innerWidth;
       const next = Math.max(24, Math.min(55, (clientX / viewport) * 100));
-      setLeftPanePercent(next);
+      pendingPanePercentRef.current = next;
+      if (resizeRafRef.current === null) {
+        resizeRafRef.current = window.requestAnimationFrame(() => {
+          resizeRafRef.current = null;
+          if (pendingPanePercentRef.current !== null) {
+            setLeftPanePercent(pendingPanePercentRef.current);
+          }
+        });
+      }
     }
 
     function handleMouseMove(event: MouseEvent) {
@@ -1036,6 +1046,11 @@ export function StreamControl() {
 
     function stopResize() {
       setIsResizingPanes(false);
+      if (resizeRafRef.current !== null) {
+        window.cancelAnimationFrame(resizeRafRef.current);
+        resizeRafRef.current = null;
+      }
+      pendingPanePercentRef.current = null;
     }
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -1080,7 +1095,7 @@ export function StreamControl() {
       const response = await fetch("/api/tiktok/live/track", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: handle, collectChatEvents: true }),
+        body: JSON.stringify({ username: handle, collectChatEvents: true, pollIntervalSec: 0.2 }),
       });
       const data = (await response.json()) as { error?: string; message?: string; started?: boolean };
       if (!response.ok) {
@@ -1652,7 +1667,7 @@ export function StreamControl() {
             <button
               onMouseDown={() => setIsResizingPanes(true)}
               onTouchStart={() => setIsResizingPanes(true)}
-              className={`w-3 rounded-full border transition ${isResizingPanes ? "border-amber-300/70 bg-amber-300/40" : "border-stone-600 bg-stone-700/70 hover:border-stone-400"}`}
+              className={`w-1.5 rounded-full transition ${isResizingPanes ? "bg-amber-300/60" : "bg-stone-600/80 hover:bg-stone-500"}`}
               aria-label="Resize panels"
               title="Drag to resize panels"
             />

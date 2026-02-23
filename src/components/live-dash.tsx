@@ -259,7 +259,7 @@ export function LiveDash() {
       const response = await fetch("/api/tiktok/live/track", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: handle, collectChatEvents: true }),
+        body: JSON.stringify({ username: handle, collectChatEvents: true, pollIntervalSec: 0.2 }),
       });
       const data = (await response.json()) as { error?: string; message?: string; started?: boolean };
       if (!response.ok) {

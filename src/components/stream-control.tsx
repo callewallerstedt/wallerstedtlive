@@ -367,15 +367,9 @@ function findTrackForComment(comment: string, tracks: LiveDashboardState["spotif
 function toYouTubePlayerSrc(embedUrl: string): string {
   try {
     const url = new URL(embedUrl);
-    url.searchParams.set("autoplay", "1");
     url.searchParams.set("rel", "0");
-    url.searchParams.set("enablejsapi", "0");
     url.searchParams.set("playsinline", "1");
-    url.searchParams.set("mute", "0");
     url.searchParams.set("controls", "1");
-    if (typeof window !== "undefined") {
-      url.searchParams.set("origin", window.location.origin);
-    }
     return url.toString();
   } catch {
     return embedUrl;

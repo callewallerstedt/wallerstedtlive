@@ -1266,12 +1266,12 @@ export function StreamControl() {
   }
 
   async function playTrackFromAlbumModal(track: LiveDashboardState["spotifyTracks"][number]) {
+    setAlbumModalKey(null);
     setActivePanel("player");
     const played = await playTrackOnly(track);
     if (played) {
       setToast({ type: "success", text: "YouTube loaded in player. Overlay unchanged." });
     }
-    setAlbumModalKey(null);
   }
 
   async function showGiftThanks(gift: { userUniqueId: string | null; nickname: string | null; giftName: string | null; repeatCount: number }) {

@@ -118,6 +118,21 @@ function toResult(renderer: Record<string, unknown>, query: string): YouTubeSear
   };
 }
 
+async function isLikelyEmbeddable(videoId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`, {
+      cache: "no-store",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+      },
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function lookupVideos(query: string, limit: number): Promise<YouTubeSearchResult[]> {
   const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
   const response = await fetch(searchUrl, {
@@ -148,10 +163,27 @@ async function lookupVideos(query: string, limit: number): Promise<YouTubeSearch
 
   const payloadRaw = html.slice(jsonStart, jsonEnd);
   const initialData = JSON.parse(payloadRaw) as unknown;
-  const renderers = findVideoRenderers(initialData, limit);
-  return renderers
+  const renderers = findVideoRenderers(initialData, Math.max(limit, 8));
+  const results = renderers
     .map((renderer) => toResult(renderer, query))
     .filter((result): result is YouTubeSearchResult => result !== null);
+
+  if (results.length <= 1) {
+    return results.slice(0, limit);
+  }
+
+  const embeddableFlags = await Promise.all(results.map((item) => isLikelyEmbeddable(item.videoId)));
+  const embeddable: YouTubeSearchResult[] = [];
+  const fallback: YouTubeSearchResult[] = [];
+  results.forEach((item, index) => {
+    if (embeddableFlags[index]) {
+      embeddable.push(item);
+    } else {
+      fallback.push(item);
+    }
+  });
+
+  return [...embeddable, ...fallback].slice(0, limit);
 }
 
 async function runSearch(query: string, rawLimit: number | null) {

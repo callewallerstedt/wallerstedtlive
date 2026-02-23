@@ -6,16 +6,8 @@ import { getStreamOverlayState } from "@/lib/stream-overlay";
 
 export const runtime = "nodejs";
 
-const CACHE_TTL_MS = 300;
-let cachedPayload: { expiresAt: number; body: unknown } | null = null;
-
 export async function GET() {
   try {
-    const now = Date.now();
-    if (cachedPayload && cachedPayload.expiresAt > now) {
-      return NextResponse.json(cachedPayload.body);
-    }
-
     const [state, goals, active] = await Promise.all([
       getStreamOverlayState(),
       getOverlayGoalsState(),
@@ -42,16 +34,7 @@ export async function GET() {
       }),
     ]);
 
-    const body = {
-      state,
-      goals,
-      session: active,
-    };
-    cachedPayload = {
-      expiresAt: now + CACHE_TTL_MS,
-      body,
-    };
-    return NextResponse.json(body);
+    return NextResponse.json({ state, goals, session: active });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown overlay runtime error";
     return NextResponse.json({ error: message }, { status: 500 });

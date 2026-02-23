@@ -94,6 +94,10 @@ function isKidLikeResult(title: string, channelTitle: string): boolean {
   return blocked.some((token) => text.includes(token));
 }
 
+function isTopicChannel(channelTitle: string): boolean {
+  return /\s-\sTopic$/i.test(channelTitle.trim());
+}
+
 function toResult(renderer: Record<string, unknown>, query: string): YouTubeSearchResult | null {
   const videoId = typeof renderer.videoId === "string" ? renderer.videoId : "";
   if (!videoId) {
@@ -195,6 +199,12 @@ async function lookupVideos(query: string, limit: number): Promise<YouTubeSearch
     } else {
       fallback.push(item);
     }
+  });
+
+  embeddable.sort((a, b) => {
+    const aScore = isTopicChannel(a.channelTitle) ? 0 : 1;
+    const bScore = isTopicChannel(b.channelTitle) ? 0 : 1;
+    return aScore - bScore;
   });
 
   return [...embeddable, ...fallback].slice(0, limit);

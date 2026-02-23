@@ -1080,7 +1080,7 @@ export function StreamControl() {
     autoplayIntervalRef.current = window.setInterval(attemptStart, 250);
     autoplayStopTimeoutRef.current = window.setTimeout(() => {
       stopAutoplayBoost();
-    }, 8000);
+    }, 15000);
   }, [sendYoutubeCommand, sendYoutubeRawCommand, stopAutoplayBoost]);
 
 
@@ -1290,6 +1290,7 @@ export function StreamControl() {
 
   async function playCommentOnly(comment: { comment: string; userUniqueId: string | null }) {
     setActivePanel("player");
+    forceStartWithAudio();
     const played = await playCommentOnYoutube(comment.comment);
     if (played) {
       setToast({ type: "success", text: "YouTube playing. Overlay unchanged." });
@@ -1395,6 +1396,7 @@ export function StreamControl() {
 
   async function playTrackFromAlbumModal(track: LiveDashboardState["spotifyTracks"][number]) {
     setActivePanel("player");
+    forceStartWithAudio();
     const played = await playTrackOnly(track);
     if (played) {
       setToast({ type: "success", text: "YouTube playing. Overlay unchanged." });
@@ -1614,6 +1616,7 @@ export function StreamControl() {
       setToast({ type: "error", text: "Enter test comment text first." });
       return;
     }
+    forceStartWithAudio();
     await playCommentOnly({ comment: text, userUniqueId: "test" });
   }
 

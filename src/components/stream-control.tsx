@@ -1186,11 +1186,9 @@ export function StreamControl() {
   async function playTrackOnly(track: LiveDashboardState["spotifyTracks"][number]): Promise<boolean> {
     const artistName = track.artistName ?? "";
     const isOwned = isMyOrArtistTrack(track);
-    // For own tracks: skip "official audio" which finds VEVO embed-blocked uploads.
-    // Use "topic" style query that typically resolves to the YouTube Music auto-generated
-    // topic channel, which is almost always embeddable.
+    // Lyrics videos for own tracks (embeddable); official audio for external/comments (as that path works).
     const query = isOwned
-      ? `${track.name} ${artistName} - Topic`.trim()
+      ? `${track.name} lyrics ${artistName}`.trim()
       : `${track.name} ${artistName} official audio`.trim();
     setSelectedTrackId(track.id);
     setIsResolvingYoutube(true);
@@ -1624,16 +1622,7 @@ export function StreamControl() {
                     <p className="mt-1 text-sm text-stone-300">{playerLabel || "Use Play on a comment to load YouTube."}</p>
                   </div>
 
-                  <div className="mt-3 flex items-center gap-2">
-                    <button
-                      onClick={() => setYoutubeEmbedNonce((n) => n + 1)}
-                      disabled={!youtubeResult}
-                      className="rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-xs text-stone-200 disabled:opacity-40"
-                    >
-                      Reload Player
-                    </button>
-                    {isResolvingYoutube ? <p className="text-xs text-amber-200">Loading YouTube...</p> : null}
-                  </div>
+                  {isResolvingYoutube ? <p className="text-xs text-amber-200">Loading YouTube...</p> : null}
 
                   {youtubeResult && youtubePlayerSrc ? (
                     <div className="mt-3 space-y-2">

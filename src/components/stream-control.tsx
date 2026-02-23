@@ -1069,15 +1069,27 @@ export function StreamControl() {
     }, 15000);
   }, [sendYoutubeCommand, stopAutoplayBoost]);
 
+  const forceStartWithAudio = useCallback(() => {
+    stopAutoplayBoost();
+    const attemptStart = () => {
+      sendYoutubeRawCommand("unMute");
+      sendYoutubeRawCommand("setVolume", [100]);
+      sendYoutubeCommand("playVideo");
+    };
+    attemptStart();
+    autoplayIntervalRef.current = window.setInterval(attemptStart, 250);
+    autoplayStopTimeoutRef.current = window.setTimeout(() => {
+      stopAutoplayBoost();
+    }, 8000);
+  }, [sendYoutubeCommand, sendYoutubeRawCommand, stopAutoplayBoost]);
+
+
   function handlePanelTabClick(panelId: PanelId) {
     setActivePanel(panelId);
   }
 
   function playYoutube() {
-    sendYoutubeRawCommand("unMute");
-    sendYoutubeRawCommand("setVolume", [100]);
-    sendYoutubeCommand("playVideo");
-    triggerAutoplayBoost();
+    forceStartWithAudio();
     setIsYoutubePlaying(true);
   }
 
@@ -1099,7 +1111,7 @@ export function StreamControl() {
   }
 
   function handleYoutubeFrameLoad() {
-    triggerAutoplayBoost();
+    forceStartWithAudio();
     setIsYoutubePlaying(true);
   }
 
@@ -1256,6 +1268,7 @@ export function StreamControl() {
       setYoutubeResult(matches[0]);
       setPlayerLabel(`${matches[0].title} (YouTube)`);
       setIsYoutubePlaying(true);
+      window.setTimeout(() => forceStartWithAudio(), 120);
       return true;
     } catch (error) {
       setYoutubeResult(null);
@@ -1312,6 +1325,7 @@ export function StreamControl() {
       setYoutubeResult(matches[0]);
       setPlayerLabel(`${matches[0].title} (YouTube)`);
       setIsYoutubePlaying(true);
+      window.setTimeout(() => forceStartWithAudio(), 120);
       return true;
     } catch (error) {
       setYoutubeResult(null);
@@ -1767,6 +1781,7 @@ export function StreamControl() {
                               setYoutubeResult(candidate);
                               setPlayerLabel(`${candidate.title} (YouTube)`);
                               setIsYoutubePlaying(true);
+                              window.setTimeout(() => forceStartWithAudio(), 120);
                             }}
                             className={`w-full rounded border px-2 py-2 text-left text-xs ${youtubeResult?.videoId === candidate.videoId ? "border-red-300/60 bg-red-400/10 text-red-100" : "border-stone-700 bg-stone-950 text-stone-200"}`}
                           >

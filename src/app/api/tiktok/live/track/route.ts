@@ -25,30 +25,30 @@ export async function POST(req: Request) {
     await updateConfig({
       tiktokHandle: normalizedUsername || null,
     });
-    if (hasLiveWorkerConfigured()) {
-      const result = await callLiveWorker<{
-        ok: boolean;
-        trackedUsername: string;
-        started: boolean;
-        sessionId?: string;
-        message: string;
-      }>("/track/start", {
-        username: normalizedUsername,
-        durationSec: body.durationSec ?? 0,
-        pollIntervalSec: body.pollIntervalSec ?? 0.5,
-        collectChatEvents: body.collectChatEvents ?? true,
-        forceRestartIfRunning: body.forceRestartIfRunning ?? true,
-      });
-      return NextResponse.json(result);
-    }
-
-    const result = await startLiveTrackingByUsername({
+    const trackInput = {
       username: normalizedUsername,
       durationSec: body.durationSec ?? 0,
       pollIntervalSec: body.pollIntervalSec ?? 0.5,
       collectChatEvents: body.collectChatEvents ?? true,
       forceRestartIfRunning: body.forceRestartIfRunning ?? true,
-    });
+    };
+
+    if (hasLiveWorkerConfigured()) {
+      try {
+        const result = await callLiveWorker<{
+          ok: boolean;
+          trackedUsername: string;
+          started: boolean;
+          sessionId?: string;
+          message: string;
+        }>("/track/start", trackInput);
+        return NextResponse.json(result);
+      } catch {
+        // Worker unreachable — fall through to direct tracking
+      }
+    }
+
+    const result = await startLiveTrackingByUsername(trackInput);
 
     if (!result.started) {
       return NextResponse.json({ error: result.message }, { status: 400 });

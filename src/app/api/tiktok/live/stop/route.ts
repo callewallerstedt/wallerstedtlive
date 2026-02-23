@@ -18,11 +18,15 @@ export async function POST(req: Request) {
     const body = stopSchema.parse(await req.json());
 
     if (hasLiveWorkerConfigured()) {
-      const result = await callLiveWorker<{ ok: boolean; stopped: boolean; sessionId?: string; message: string }>(
-        "/track/stop",
-        { username: body.username }
-      );
-      return NextResponse.json(result);
+      try {
+        const result = await callLiveWorker<{ ok: boolean; stopped: boolean; sessionId?: string; message: string }>(
+          "/track/stop",
+          { username: body.username }
+        );
+        return NextResponse.json(result);
+      } catch {
+        // Worker unreachable — fall through to direct stop
+      }
     }
 
     const result = await stopLiveTrackingByUsernameAsync(body.username);

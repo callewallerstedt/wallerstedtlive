@@ -18,10 +18,14 @@ export async function POST(req: Request) {
     const body = checkSchema.parse(await req.json());
 
     if (hasLiveWorkerConfigured()) {
-      const result = await callLiveWorker<{ ok: boolean; snapshot: unknown }>("/track/check", {
-        username: body.username,
-      });
-      return NextResponse.json(result);
+      try {
+        const result = await callLiveWorker<{ ok: boolean; snapshot: unknown }>("/track/check", {
+          username: body.username,
+        });
+        return NextResponse.json(result);
+      } catch {
+        // Worker unreachable — fall through to direct check
+      }
     }
 
     const snapshot = await fetchLiveSnapshotByUsername(body.username);

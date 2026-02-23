@@ -1169,6 +1169,35 @@ export function StreamControl() {
       setIsBusy(false);
     }
   }
+
+  async function resetAllTrackingData() {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("Reset all tracking data? This will clear sessions, samples, comments, gifts, and saved tracking handle.");
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setIsBusy(true);
+    try {
+      const response = await fetch("/api/tiktok/live/reset", {
+        method: "POST",
+      });
+      const data = (await response.json()) as { error?: string; message?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Reset failed");
+      }
+      setUsername("");
+      setLastTrackedHandle("");
+      setQuickSnapshot(null);
+      setToast({ type: "success", text: data.message ?? "Tracking data reset." });
+      await refreshLiveState(false);
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Reset failed" });
+    } finally {
+      setIsBusy(false);
+    }
+  }
   async function searchYoutube(query: string, limit = 5): Promise<YouTubeResult[]> {
     const response = await fetch("/api/youtube/search", {
       method: "POST",
@@ -1611,6 +1640,7 @@ export function StreamControl() {
               <button onClick={() => void stopTracking()} disabled={isBusy} className="min-h-10 rounded-lg border border-red-300/60 bg-red-400/10 px-3 py-2 text-xs text-red-100 disabled:opacity-50">Stop</button>
               <button onClick={() => void checkLive()} disabled={isBusy} className="min-h-10 rounded-lg border border-stone-500 bg-stone-800 px-3 py-2 text-xs text-stone-100 disabled:opacity-50">Check</button>
               <button onClick={() => void clearOverlay()} disabled={isBusy} className="min-h-10 rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-xs text-stone-200 disabled:opacity-50">Clear</button>
+              <button onClick={() => void resetAllTrackingData()} disabled={isBusy} className="min-h-10 rounded-lg border border-red-300/60 bg-red-400/10 px-3 py-2 text-xs text-red-100 disabled:opacity-50">Reset Tracking Data</button>
               <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">
                 tracking {syncedTrackedHandle ? `@${syncedTrackedHandle}` : "none"}
               </span>

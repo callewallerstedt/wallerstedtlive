@@ -364,15 +364,16 @@ function findTrackForComment(comment: string, tracks: LiveDashboardState["spotif
   return best.track;
 }
 
-function toYouTubePlayerSrc(embedUrl: string): string {
+function toYouTubePlayerSrc(embedUrl: string, cacheBust: number): string {
   try {
     const url = new URL(embedUrl);
     url.searchParams.set("rel", "0");
     url.searchParams.set("playsinline", "1");
     url.searchParams.set("controls", "1");
+    url.searchParams.set("cb", cacheBust.toString());
     return url.toString();
   } catch {
-    return embedUrl;
+    return `${embedUrl}?cb=${cacheBust}`;
   }
 }
 
@@ -425,7 +426,7 @@ export function StreamControl() {
   const usernameRef = useRef("");
   const lastTrackedHandleRef = useRef("");
 
-  const youtubePlayerSrc = useMemo(() => (youtubeResult ? toYouTubePlayerSrc(youtubeResult.embedUrl) : null), [youtubeResult]);
+  const youtubePlayerSrc = useMemo(() => (youtubeResult ? toYouTubePlayerSrc(youtubeResult.embedUrl, youtubeEmbedNonce) : null), [youtubeResult, youtubeEmbedNonce]);
 
   async function refreshLiveState(runtimeOnly = false, runtimeUsername?: string) {
     const params = new URLSearchParams();

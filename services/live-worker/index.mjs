@@ -42,9 +42,8 @@ async function safeDbWrite(action, state) {
     await action();
   } catch (error) {
     if (isSessionFkError(error)) {
-      state.finalized = true;
       state.warnings.push("session removed while stream was writing events");
-      return;
+      throw new Error("SESSION_GONE");
     }
     throw error;
   }
@@ -248,7 +247,29 @@ function startStreamingJob(sessionId, input) {
 
   const enqueue = (action) => {
     writeQueue = writeQueue.then(action).catch((e) => {
-      state.warnings.push(e instanceof Error ? e.message : "DB write error");
+      const message = e instanceof Error ? e.message : "DB write error";
+
+      if (message === "SESSION_GONE") {
+        if (!state.finalized) {
+          state.finalized = true;
+          const active = activeJobsBySession.get(sessionId);
+          if (active) {
+            active.stopReason = "Session deleted while streaming.";
+            try {
+              active.child.kill();
+            } catch {
+              // ignore kill errors
+            }
+          }
+          activeJobsBySession.delete(sessionId);
+          if (activeSessionByUsername.get(username) === sessionId) {
+            activeSessionByUsername.delete(username);
+          }
+        }
+        return;
+      }
+
+      state.warnings.push(message);
     });
   };
 

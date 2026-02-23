@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Wallerstedt Control",
     short_name: "Control",
     description: "Live stream control and overlay dashboard",
-    start_url: "/stream-control",
+    start_url: "/",
     scope: "/",
     display: "standalone",
     background_color: "#0c0a09",

@@ -20,6 +20,8 @@ export async function callLiveWorker<T>(path: string, body: Record<string, unkno
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        // localtunnel free domains can require this header to skip the interstitial page
+        "bypass-tunnel-reminder": "true",
         ...(WORKER_TOKEN ? { Authorization: `Bearer ${WORKER_TOKEN}` } : {}),
       },
       body: JSON.stringify(body),

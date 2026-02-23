@@ -667,7 +667,7 @@ export function StreamControl() {
       refreshLiveState(true, runtimeHint).catch(() => undefined).finally(() => {
         isLiveRefreshInFlightRef.current = false;
       });
-    }, 1800);
+    }, 1000);
     const goalsTimer = setInterval(() => {
       if (isGoalsRefreshInFlightRef.current) {
         return;
@@ -1571,8 +1571,8 @@ export function StreamControl() {
           ) : null}
         </section>
 
-        <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-3">
-          <aside className="min-h-0 max-h-[36dvh] rounded-2xl border border-stone-700 bg-stone-900 p-3 lg:max-h-none lg:col-span-1">
+        <section className="grid min-h-0 flex-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <aside className="min-h-0 max-h-[32dvh] rounded-2xl border border-stone-700 bg-stone-900 p-3 md:max-h-none md:col-span-1 lg:col-span-1">
             <div className="flex h-full flex-col">
               <h2 className="text-lg text-stone-100">Live Comments</h2>
               <p className="mt-1 text-sm text-stone-400">Show updates overlay only. Play starts YouTube only.</p>
@@ -1599,7 +1599,7 @@ export function StreamControl() {
             </div>
           </aside>
 
-          <main className="min-h-0 rounded-2xl border border-stone-700 bg-stone-900 p-3 lg:col-span-2">
+          <main className="min-h-0 rounded-2xl border border-stone-700 bg-stone-900 p-3 md:col-span-1 lg:col-span-2">
             <div className="flex h-full flex-col gap-3">
               <div
                 className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
@@ -1675,7 +1675,7 @@ export function StreamControl() {
                     <p className="mt-1 text-sm text-stone-400">Tap an album cover, pick one song, and the modal closes automatically.</p>
                     <div className="mt-3 min-h-0 flex-1 overflow-auto pr-1">
                       {groupedTracksByAlbum.length === 0 ? <p className="text-sm text-stone-400">No tracks available.</p> : (
-                        <div className="grid grid-cols-3 gap-3 md:grid-cols-4 lg:grid-cols-5">
+                        <div className="grid grid-cols-4 gap-2 sm:grid-cols-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                           {groupedTracksByAlbum.map((group) => (
                             <button
                               key={group.key}

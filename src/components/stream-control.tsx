@@ -1651,7 +1651,7 @@ export function StreamControl() {
 
                   {youtubeResult && youtubePlayerSrc ? (
                     <div className="mt-3 space-y-2">
-                      <div className="aspect-video w-full max-w-[820px] overflow-hidden rounded-lg border border-stone-700 bg-black">
+                      <div className="aspect-video w-full max-w-[620px] overflow-hidden rounded-lg border border-stone-700 bg-black">
                         <iframe
                           key={`${youtubeResult.videoId}-${youtubeEmbedNonce}`}
                           src={youtubePlayerSrc}

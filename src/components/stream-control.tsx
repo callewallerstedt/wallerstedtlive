@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { LiveDashboardState, OverlayGoalsState, StreamOverlayMode, StreamOverlayState } from "@/lib/types";
 
@@ -367,11 +367,11 @@ function findTrackForComment(comment: string, tracks: LiveDashboardState["spotif
 function toYouTubePlayerSrc(embedUrl: string): string {
   try {
     const url = new URL(embedUrl);
-    url.searchParams.set("autoplay", "0");
+    url.searchParams.set("autoplay", "1");
     url.searchParams.set("rel", "0");
-    url.searchParams.set("enablejsapi", "1");
+    url.searchParams.set("enablejsapi", "0");
     url.searchParams.set("playsinline", "1");
-    url.searchParams.set("mute", "1");
+    url.searchParams.set("mute", "0");
     url.searchParams.set("controls", "1");
     if (typeof window !== "undefined") {
       url.searchParams.set("origin", window.location.origin);
@@ -422,9 +422,6 @@ export function StreamControl() {
   const [autoLikeShowProgressInput, setAutoLikeShowProgressInput] = useState(true);
   const [isSavingGoals, setIsSavingGoals] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
-  const youtubeFrameRef = useRef<HTMLIFrameElement | null>(null);
-  const autoplayIntervalRef = useRef<number | null>(null);
-  const autoplayStopTimeoutRef = useRef<number | null>(null);
   const isCoverFetchInFlightRef = useRef(false);
   const isOverlayRefreshInFlightRef = useRef(false);
   const isLiveRefreshInFlightRef = useRef(false);
@@ -1028,115 +1025,6 @@ export function StreamControl() {
     { id: "custom", label: "Custom", hint: "manual text" },
   ];
 
-  const sendYoutubeRawCommand = useCallback((func: string, args: unknown[] = []) => {
-    const frame = youtubeFrameRef.current;
-    if (!frame?.contentWindow) {
-      return;
-    }
-    frame.contentWindow.postMessage(JSON.stringify({ event: "command", func, args }), "*");
-  }, []);
-
-  const sendYoutubeCommand = useCallback((command: "playVideo" | "pauseVideo") => {
-    sendYoutubeRawCommand(command);
-  }, [sendYoutubeRawCommand]);
-
-  const stopAutoplayBoost = useCallback(() => {
-    if (autoplayIntervalRef.current !== null) {
-      window.clearInterval(autoplayIntervalRef.current);
-      autoplayIntervalRef.current = null;
-    }
-    if (autoplayStopTimeoutRef.current !== null) {
-      window.clearTimeout(autoplayStopTimeoutRef.current);
-      autoplayStopTimeoutRef.current = null;
-    }
-  }, []);
-
-  function handlePanelTabClick(panelId: PanelId) {
-    setActivePanel(panelId);
-  }
-
-  function playYoutube() {
-    sendYoutubeCommand("playVideo");
-  }
-
-  function pauseYoutube() {
-    stopAutoplayBoost();
-    sendYoutubeCommand("pauseVideo");
-    setIsYoutubePlaying(false);
-  }
-
-  function toggleYoutubePlayback() {
-    if (!youtubeResult) {
-      return;
-    }
-    if (isYoutubePlaying) {
-      pauseYoutube();
-      return;
-    }
-    playYoutube();
-  }
-
-  function handleYoutubeFrameLoad() {
-    sendYoutubeRawCommand("addEventListener", ["onStateChange"]);
-    setIsYoutubePlaying(false);
-  }
-
-  useEffect(() => {
-    return () => {
-      stopAutoplayBoost();
-    };
-  }, [stopAutoplayBoost]);
-
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      const raw = event.data;
-      let data: unknown = raw;
-      if (typeof raw === "string") {
-        try {
-          data = JSON.parse(raw);
-        } catch {
-          return;
-        }
-      }
-      if (!data || typeof data !== "object") {
-        return;
-      }
-      const record = data as Record<string, unknown>;
-      if (record.event !== "onStateChange") {
-        return;
-      }
-      const state = Number(record.info);
-      if (state === 1) {
-        setIsYoutubePlaying(true);
-      } else if (state === 2 || state === 0 || state === 5 || state === -1) {
-        setIsYoutubePlaying(false);
-      }
-    };
-    window.addEventListener("message", onMessage);
-    return () => {
-      window.removeEventListener("message", onMessage);
-    };
-  }, []);
-
-
-  useEffect(() => {
-    if (!youtubeResult?.videoId) {
-      return;
-    }
-    setIsYoutubePlaying(false);
-  }, [youtubeResult?.videoId]);
-
-  useEffect(() => {
-    if (!youtubeResult?.videoId || !isYoutubePlaying) {
-      return;
-    }
-    const keepAlive = window.setInterval(() => {
-      sendYoutubeCommand("playVideo");
-    }, 3000);
-    return () => {
-      window.clearInterval(keepAlive);
-    };
-  }, [isYoutubePlaying, sendYoutubeCommand, youtubeResult?.videoId]);
 
   async function startTracking(rawHandle?: string) {
     if (isBusy) {
@@ -1260,7 +1148,7 @@ export function StreamControl() {
       }
       setYoutubeResult(matches[0]);
       setPlayerLabel(`${matches[0].title} (YouTube)`);
-      setIsYoutubePlaying(true);
+      setIsYoutubePlaying(false);
       return true;
     } catch (error) {
       setYoutubeResult(null);
@@ -1316,7 +1204,7 @@ export function StreamControl() {
       }
       setYoutubeResult(matches[0]);
       setPlayerLabel(`${matches[0].title} (YouTube)`);
-      setIsYoutubePlaying(true);
+      setIsYoutubePlaying(false);
       return true;
     } catch (error) {
       setYoutubeResult(null);
@@ -1737,7 +1625,7 @@ export function StreamControl() {
                   </div>
 
                   <button onClick={toggleYoutubePlayback} disabled={!youtubeResult} className={`mt-3 w-full rounded-lg border px-5 py-3 text-base font-semibold transition ${isYoutubePlaying ? "border-amber-300/60 bg-amber-300/10 text-amber-100" : "border-emerald-300/60 bg-emerald-300/10 text-emerald-100"} disabled:opacity-40`}>
-                    {isYoutubePlaying ? "Pause Playback" : "Play Playback"}
+                    Open Player
                   </button>
 
                   {isResolvingYoutube ? <p className="mt-2 text-xs text-amber-200">Loading YouTube...</p> : null}
@@ -1745,7 +1633,6 @@ export function StreamControl() {
                     <div className="mt-3 space-y-2">
                       <div className="aspect-video max-w-[360px] overflow-hidden rounded-lg border border-stone-700 bg-black/80">
                         <iframe
-                          ref={youtubeFrameRef}
                           key={youtubeResult.videoId}
                           src={youtubePlayerSrc}
                           title={youtubeResult.title}
@@ -1754,7 +1641,6 @@ export function StreamControl() {
                           referrerPolicy="strict-origin-when-cross-origin"
                           allowFullScreen
                           className="h-full w-full"
-                          onLoad={handleYoutubeFrameLoad}
                         />
                       </div>
                       <p className="text-xs text-stone-400">{youtubeResult.title}</p>
@@ -1771,7 +1657,7 @@ export function StreamControl() {
                             onClick={() => {
                               setYoutubeResult(candidate);
                               setPlayerLabel(`${candidate.title} (YouTube)`);
-                              setIsYoutubePlaying(true);
+                              setIsYoutubePlaying(false);
                                                     }}
                             className={`w-full rounded border px-2 py-2 text-left text-xs ${youtubeResult?.videoId === candidate.videoId ? "border-red-300/60 bg-red-400/10 text-red-100" : "border-stone-700 bg-stone-950 text-stone-200"}`}
                           >

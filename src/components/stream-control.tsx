@@ -276,7 +276,7 @@ function MonitorTrendChart({ title, summary, points, strokeColor, gradientId, va
         <p className="mt-4 text-sm text-stone-400">No samples yet.</p>
       ) : (
         <div className="mt-3 overflow-hidden rounded-lg border border-stone-700/70 bg-stone-950/70 p-2">
-          <svg viewBox={`0 0 ${MONITOR_CHART_WIDTH} ${MONITOR_CHART_HEIGHT}`} className="h-[220px] w-full md:h-[260px]">
+          <svg viewBox={`0 0 ${MONITOR_CHART_WIDTH} ${MONITOR_CHART_HEIGHT}`} className="h-[180px] w-full md:h-[220px]">
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={strokeColor} stopOpacity="0.35" />
@@ -2143,7 +2143,7 @@ export function StreamControl() {
                 ) : null}
 
                 {activePanel === "monitor" ? (
-                  <div className="flex h-full flex-col">
+                  <div className="space-y-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <h2 className="text-lg text-stone-100">Live Monitor</h2>
@@ -2152,7 +2152,7 @@ export function StreamControl() {
                       <p className="rounded-full border border-stone-700 bg-stone-900/80 px-3 py-1 text-xs text-stone-300">{viewerCurve.length} samples</p>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                       {monitorPrimaryStats.map((item) => (
                         <article key={item.label} className={`rounded-xl border p-3 ${item.tone === "live" ? "border-emerald-300/50 bg-emerald-400/10" : "border-stone-700 bg-stone-900/90"}`}>
                           <p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{item.label}</p>
@@ -2162,8 +2162,8 @@ export function StreamControl() {
                       ))}
                     </div>
 
-                    <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,1fr)] xl:items-start">
-                      <div className="grid min-h-0 grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)]">
+                      <div className="grid grid-cols-1 gap-4">
                         <MonitorTrendChart
                           title="Viewer Curve"
                           summary={`Current ${currentViewerCount.toLocaleString()} | Min ${viewerMin.toLocaleString()} | Max ${viewerMax.toLocaleString()}`}
@@ -2200,7 +2200,7 @@ export function StreamControl() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 gap-4 xl:sticky xl:top-0">
+                      <div className="grid grid-cols-1 gap-4">
                         <article className="rounded-xl border border-stone-700 bg-stone-900/90 p-3">
                           <p className="text-xs uppercase tracking-[0.18em] text-stone-500">Audience Performance</p>
                           <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">

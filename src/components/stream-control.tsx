@@ -1025,6 +1025,13 @@ export function StreamControl() {
     { id: "custom", label: "Custom", hint: "manual text" },
   ];
 
+  function handlePanelTabClick(panelId: PanelId) {
+    setActivePanel(panelId);
+  }
+
+  function toggleYoutubePlayback() {
+    setToast({ type: "info", text: "Use YouTube controls directly in the player." });
+  }
 
   async function startTracking(rawHandle?: string) {
     if (isBusy) {

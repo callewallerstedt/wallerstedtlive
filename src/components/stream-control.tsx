@@ -391,9 +391,9 @@ export function StreamControl() {
   const [youtubeResult, setYoutubeResult] = useState<YouTubeResult | null>(null);
   const [youtubeCandidates, setYoutubeCandidates] = useState<YouTubeResult[]>([]);
   const [isResolvingYoutube, setIsResolvingYoutube] = useState(false);
-  const [isYoutubePlaying, setIsYoutubePlaying] = useState(false);
   const [selectedTrackId, setSelectedTrackId] = useState("");
   const [playerLabel, setPlayerLabel] = useState("");
+  const [youtubeEmbedNonce, setYoutubeEmbedNonce] = useState(0);
   const [activePanel, setActivePanel] = useState<PanelId>("player");
   const [lastTrackedHandle, setLastTrackedHandle] = useState("");
   const [ctaPresets, setCtaPresets] = useState<CtaPresetConfig[]>(defaultCtaPresets);
@@ -1023,10 +1023,6 @@ export function StreamControl() {
     setActivePanel(panelId);
   }
 
-  function toggleYoutubePlayback() {
-    setToast({ type: "info", text: "Use YouTube controls directly in the player." });
-  }
-
   async function startTracking(rawHandle?: string) {
     if (isBusy) {
       return;
@@ -1142,19 +1138,16 @@ export function StreamControl() {
       setYoutubeCandidates(matches);
       if (!matches[0]) {
         setYoutubeResult(null);
-        setIsYoutubePlaying(false);
         setPlayerLabel("No YouTube match found.");
         setToast({ type: "error", text: "No YouTube match found for this comment." });
         return false;
       }
       setYoutubeResult(matches[0]);
       setPlayerLabel(`${matches[0].title} (YouTube)`);
-      setIsYoutubePlaying(false);
       return true;
     } catch (error) {
       setYoutubeResult(null);
       setYoutubeCandidates([]);
-      setIsYoutubePlaying(false);
       setPlayerLabel("YouTube lookup failed.");
       setToast({ type: "error", text: error instanceof Error ? error.message : "YouTube lookup failed" });
       return false;
@@ -1173,7 +1166,7 @@ export function StreamControl() {
     setActivePanel("player");
     const played = await playCommentOnYoutube(comment.comment);
     if (played) {
-      setToast({ type: "success", text: "YouTube playing. Overlay unchanged." });
+      setToast({ type: "success", text: "YouTube loaded in player. Overlay unchanged." });
     }
   }
 
@@ -1198,19 +1191,16 @@ export function StreamControl() {
       setYoutubeCandidates(matches);
       if (!matches[0]) {
         setYoutubeResult(null);
-        setIsYoutubePlaying(false);
         setPlayerLabel("No YouTube match found.");
         setToast({ type: "error", text: "No YouTube match found for this song." });
         return false;
       }
       setYoutubeResult(matches[0]);
       setPlayerLabel(`${matches[0].title} (YouTube)`);
-      setIsYoutubePlaying(false);
       return true;
     } catch (error) {
       setYoutubeResult(null);
       setYoutubeCandidates([]);
-      setIsYoutubePlaying(false);
       setPlayerLabel("YouTube lookup failed.");
       setToast({ type: "error", text: error instanceof Error ? error.message : "YouTube lookup failed" });
       return false;
@@ -1277,7 +1267,7 @@ export function StreamControl() {
     setActivePanel("player");
     const played = await playTrackOnly(track);
     if (played) {
-      setToast({ type: "success", text: "YouTube playing. Overlay unchanged." });
+      setToast({ type: "success", text: "YouTube loaded in player. Overlay unchanged." });
     }
     setAlbumModalKey(null);
   }
@@ -1625,20 +1615,26 @@ export function StreamControl() {
                     <p className="mt-1 text-sm text-stone-300">{playerLabel || "Use Play on a comment to load YouTube."}</p>
                   </div>
 
-                  <button onClick={toggleYoutubePlayback} disabled={!youtubeResult} className={`mt-3 w-full rounded-lg border px-5 py-3 text-base font-semibold transition ${isYoutubePlaying ? "border-amber-300/60 bg-amber-300/10 text-amber-100" : "border-emerald-300/60 bg-emerald-300/10 text-emerald-100"} disabled:opacity-40`}>
-                    Open Player
-                  </button>
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      onClick={() => setYoutubeEmbedNonce((n) => n + 1)}
+                      disabled={!youtubeResult}
+                      className="rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-xs text-stone-200 disabled:opacity-40"
+                    >
+                      Reload Player
+                    </button>
+                    {isResolvingYoutube ? <p className="text-xs text-amber-200">Loading YouTube...</p> : null}
+                  </div>
 
-                  {isResolvingYoutube ? <p className="mt-2 text-xs text-amber-200">Loading YouTube...</p> : null}
                   {youtubeResult && youtubePlayerSrc ? (
                     <div className="mt-3 space-y-2">
-                      <div className="aspect-video max-w-[360px] overflow-hidden rounded-lg border border-stone-700 bg-black/80">
+                      <div className="aspect-video w-full max-w-[820px] overflow-hidden rounded-lg border border-stone-700 bg-black">
                         <iframe
-                          key={youtubeResult.videoId}
+                          key={`${youtubeResult.videoId}-${youtubeEmbedNonce}`}
                           src={youtubePlayerSrc}
                           title={youtubeResult.title}
                           loading="eager"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allow="autoplay; encrypted-media; picture-in-picture; web-share"
                           referrerPolicy="strict-origin-when-cross-origin"
                           allowFullScreen
                           className="h-full w-full"
@@ -1658,8 +1654,7 @@ export function StreamControl() {
                             onClick={() => {
                               setYoutubeResult(candidate);
                               setPlayerLabel(`${candidate.title} (YouTube)`);
-                              setIsYoutubePlaying(false);
-                                                    }}
+                                                                          }}
                             className={`w-full rounded border px-2 py-2 text-left text-xs ${youtubeResult?.videoId === candidate.videoId ? "border-red-300/60 bg-red-400/10 text-red-100" : "border-stone-700 bg-stone-950 text-stone-200"}`}
                           >
                             <p className="truncate">{candidate.title}</p>

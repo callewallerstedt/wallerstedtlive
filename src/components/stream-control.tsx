@@ -367,7 +367,7 @@ function findTrackForComment(comment: string, tracks: LiveDashboardState["spotif
 function toYouTubePlayerSrc(embedUrl: string): string {
   try {
     const url = new URL(embedUrl);
-    url.searchParams.set("autoplay", "1");
+    url.searchParams.set("autoplay", "0");
     url.searchParams.set("rel", "0");
     url.searchParams.set("enablejsapi", "1");
     url.searchParams.set("playsinline", "1");
@@ -1051,46 +1051,12 @@ export function StreamControl() {
     }
   }, []);
 
-  const triggerAutoplayBoost = useCallback(() => {
-    stopAutoplayBoost();
-    const attemptPlay = () => {
-      sendYoutubeCommand("playVideo");
-    };
-    attemptPlay();
-    window.setTimeout(() => {
-      sendYoutubeCommand("pauseVideo");
-    }, 620);
-    window.setTimeout(() => {
-      sendYoutubeCommand("playVideo");
-    }, 880);
-    autoplayIntervalRef.current = window.setInterval(attemptPlay, 700);
-    autoplayStopTimeoutRef.current = window.setTimeout(() => {
-      stopAutoplayBoost();
-    }, 15000);
-  }, [sendYoutubeCommand, stopAutoplayBoost]);
-
-  const forceStartWithAudio = useCallback(() => {
-    stopAutoplayBoost();
-    const attemptStart = () => {
-      sendYoutubeRawCommand("unMute");
-      sendYoutubeRawCommand("setVolume", [100]);
-      sendYoutubeCommand("playVideo");
-    };
-    attemptStart();
-    autoplayIntervalRef.current = window.setInterval(attemptStart, 250);
-    autoplayStopTimeoutRef.current = window.setTimeout(() => {
-      stopAutoplayBoost();
-    }, 15000);
-  }, [sendYoutubeCommand, sendYoutubeRawCommand, stopAutoplayBoost]);
-
-
   function handlePanelTabClick(panelId: PanelId) {
     setActivePanel(panelId);
   }
 
   function playYoutube() {
-    forceStartWithAudio();
-    setIsYoutubePlaying(true);
+    sendYoutubeCommand("playVideo");
   }
 
   function pauseYoutube() {
@@ -1111,8 +1077,8 @@ export function StreamControl() {
   }
 
   function handleYoutubeFrameLoad() {
-    forceStartWithAudio();
-    setIsYoutubePlaying(true);
+    sendYoutubeRawCommand("addEventListener", ["onStateChange"]);
+    setIsYoutubePlaying(false);
   }
 
   useEffect(() => {
@@ -1122,16 +1088,43 @@ export function StreamControl() {
   }, [stopAutoplayBoost]);
 
   useEffect(() => {
-    if (!youtubeResult?.videoId || !isYoutubePlaying) {
+    const onMessage = (event: MessageEvent) => {
+      const raw = event.data;
+      let data: unknown = raw;
+      if (typeof raw === "string") {
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          return;
+        }
+      }
+      if (!data || typeof data !== "object") {
+        return;
+      }
+      const record = data as Record<string, unknown>;
+      if (record.event !== "onStateChange") {
+        return;
+      }
+      const state = Number(record.info);
+      if (state === 1) {
+        setIsYoutubePlaying(true);
+      } else if (state === 2 || state === 0 || state === 5 || state === -1) {
+        setIsYoutubePlaying(false);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+    };
+  }, []);
+
+
+  useEffect(() => {
+    if (!youtubeResult?.videoId) {
       return;
     }
-    const timer = window.setTimeout(() => {
-      triggerAutoplayBoost();
-    }, 120);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [isYoutubePlaying, triggerAutoplayBoost, youtubeResult?.videoId]);
+    setIsYoutubePlaying(false);
+  }, [youtubeResult?.videoId]);
 
   useEffect(() => {
     if (!youtubeResult?.videoId || !isYoutubePlaying) {
@@ -1268,7 +1261,6 @@ export function StreamControl() {
       setYoutubeResult(matches[0]);
       setPlayerLabel(`${matches[0].title} (YouTube)`);
       setIsYoutubePlaying(true);
-      window.setTimeout(() => forceStartWithAudio(), 120);
       return true;
     } catch (error) {
       setYoutubeResult(null);
@@ -1290,7 +1282,6 @@ export function StreamControl() {
 
   async function playCommentOnly(comment: { comment: string; userUniqueId: string | null }) {
     setActivePanel("player");
-    forceStartWithAudio();
     const played = await playCommentOnYoutube(comment.comment);
     if (played) {
       setToast({ type: "success", text: "YouTube playing. Overlay unchanged." });
@@ -1326,7 +1317,6 @@ export function StreamControl() {
       setYoutubeResult(matches[0]);
       setPlayerLabel(`${matches[0].title} (YouTube)`);
       setIsYoutubePlaying(true);
-      window.setTimeout(() => forceStartWithAudio(), 120);
       return true;
     } catch (error) {
       setYoutubeResult(null);
@@ -1396,7 +1386,6 @@ export function StreamControl() {
 
   async function playTrackFromAlbumModal(track: LiveDashboardState["spotifyTracks"][number]) {
     setActivePanel("player");
-    forceStartWithAudio();
     const played = await playTrackOnly(track);
     if (played) {
       setToast({ type: "success", text: "YouTube playing. Overlay unchanged." });
@@ -1616,7 +1605,6 @@ export function StreamControl() {
       setToast({ type: "error", text: "Enter test comment text first." });
       return;
     }
-    forceStartWithAudio();
     await playCommentOnly({ comment: text, userUniqueId: "test" });
   }
 
@@ -1784,8 +1772,7 @@ export function StreamControl() {
                               setYoutubeResult(candidate);
                               setPlayerLabel(`${candidate.title} (YouTube)`);
                               setIsYoutubePlaying(true);
-                              window.setTimeout(() => forceStartWithAudio(), 120);
-                            }}
+                                                    }}
                             className={`w-full rounded border px-2 py-2 text-left text-xs ${youtubeResult?.videoId === candidate.videoId ? "border-red-300/60 bg-red-400/10 text-red-100" : "border-stone-700 bg-stone-950 text-stone-200"}`}
                           >
                             <p className="truncate">{candidate.title}</p>

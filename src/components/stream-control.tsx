@@ -371,7 +371,7 @@ function toYouTubePlayerSrc(embedUrl: string): string {
     url.searchParams.set("rel", "0");
     url.searchParams.set("enablejsapi", "1");
     url.searchParams.set("playsinline", "1");
-    url.searchParams.set("mute", "0");
+    url.searchParams.set("mute", "1");
     url.searchParams.set("controls", "1");
     if (typeof window !== "undefined") {
       url.searchParams.set("origin", window.location.origin);
@@ -1099,8 +1099,6 @@ export function StreamControl() {
   }
 
   function handleYoutubeFrameLoad() {
-    sendYoutubeRawCommand("unMute");
-    sendYoutubeRawCommand("setVolume", [100]);
     triggerAutoplayBoost();
     setIsYoutubePlaying(true);
   }

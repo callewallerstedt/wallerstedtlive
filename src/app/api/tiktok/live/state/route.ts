@@ -4,6 +4,7 @@ import { getOrCreateConfig } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
 import { refreshLiveTrackingSnapshot } from "@/lib/tiktok-live";
 import { LiveDashboardState } from "@/lib/types";
+import { hasLiveWorkerConfigured } from "@/lib/live-worker-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,10 @@ export async function GET(request: Request) {
     const runtimeMode = url.searchParams.get("runtime") === "1";
     const runtimeUsername = url.searchParams.get("username")?.trim().replace(/^@/, "") || undefined;
     const config = await getOrCreateConfig();
-    if (runtimeMode) {
+    // Critical: when live-worker is active, do NOT run serverless refresh here.
+    // The worker already streams data into DB; calling refreshLiveTrackingSnapshot
+    // blocks this endpoint on slow upstream checks and causes 10-30s UI lag.
+    if (runtimeMode && !hasLiveWorkerConfigured()) {
       await refreshLiveTrackingSnapshot(runtimeUsername ?? config.tiktokHandle ?? undefined).catch(() => undefined);
     }
     const [liveSessions, latestSyncEvents, spotifyTracks] = runtimeMode
@@ -26,15 +30,15 @@ export async function GET(request: Request) {
             include: {
               samples: {
                 orderBy: { capturedAt: "asc" },
-                take: 5000,
+                take: 1200,
               },
               comments: {
                 orderBy: { createdAt: "asc" },
-                take: 2000,
+                take: 600,
               },
               gifts: {
                 orderBy: { createdAt: "asc" },
-                take: 2000,
+                take: 600,
               },
             },
           }),

@@ -417,6 +417,8 @@ export function StreamControl() {
   const [autoLikeShowProgressInput, setAutoLikeShowProgressInput] = useState(true);
   const [isSavingGoals, setIsSavingGoals] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
+  const [leftPanePercent, setLeftPanePercent] = useState(34);
+  const [isResizingPanes, setIsResizingPanes] = useState(false);
   const isCoverFetchInFlightRef = useRef(false);
   const isOverlayRefreshInFlightRef = useRef(false);
   const isLiveRefreshInFlightRef = useRef(false);
@@ -1010,6 +1012,45 @@ export function StreamControl() {
     return Math.min(100, (currentDonationCount / target) * 100);
   }, [overlayGoals?.donationGoalTarget, currentDonationCount]);
 
+  useEffect(() => {
+    if (!isResizingPanes) {
+      return;
+    }
+
+    function onMove(clientX: number) {
+      const viewport = window.innerWidth;
+      const next = Math.max(24, Math.min(55, (clientX / viewport) * 100));
+      setLeftPanePercent(next);
+    }
+
+    function handleMouseMove(event: MouseEvent) {
+      onMove(event.clientX);
+    }
+
+    function handleTouchMove(event: TouchEvent) {
+      const touch = event.touches[0];
+      if (touch) {
+        onMove(touch.clientX);
+      }
+    }
+
+    function stopResize() {
+      setIsResizingPanes(false);
+    }
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopResize);
+    window.addEventListener("touchmove", handleTouchMove, { passive: true });
+    window.addEventListener("touchend", stopResize);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopResize);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", stopResize);
+    };
+  }, [isResizingPanes]);
+
   const panelButtons: Array<{ id: PanelId; label: string; hint: string }> = [
     { id: "player", label: "iPad Player", hint: youtubeResult ? "ready" : "idle" },
     { id: "songs", label: "Song Picker", hint: `${filteredTracks.length} tracks` },
@@ -1503,10 +1544,10 @@ export function StreamControl() {
   return (
     <div className="min-h-[100dvh] overflow-hidden bg-stone-950 text-stone-100">
       <div className="mx-auto flex h-[100dvh] w-full max-w-[1680px] flex-col gap-3 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-4">
-        <div className="pointer-events-none fixed right-3 top-3 z-50">
+        <div className="pointer-events-none fixed bottom-3 right-3 z-50">
           <button
             onClick={() => setIsFocusMode((prev) => !prev)}
-            className="pointer-events-auto h-8 rounded-md border border-stone-500 bg-stone-900/95 px-2.5 py-1 text-[11px] text-stone-100 shadow-lg backdrop-blur"
+            className="pointer-events-auto h-9 rounded-md border border-stone-500 bg-stone-900/95 px-3 py-1 text-xs text-stone-100 shadow-lg backdrop-blur"
           >
             {isFocusMode ? "Show Controls" : "Hide Controls"}
           </button>
@@ -1514,12 +1555,12 @@ export function StreamControl() {
 
         <section className="rounded-xl border border-stone-700 bg-stone-900/95 px-3 py-2">
           <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">time {liveClockLabel}</span>
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">live {sessionDurationLabel}</span>
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">viewers {currentViewerCount.toLocaleString()}</span>
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">likes {currentLikeCount.toLocaleString()}</span>
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">diamonds {currentDonationCount.toLocaleString()}</span>
-            <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-200">~SEK {donationSek.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+            <span className="rounded-full bg-stone-800 px-3 py-1.5 text-sm font-medium text-stone-100">time {liveClockLabel}</span>
+            <span className="rounded-full bg-stone-800 px-3 py-1.5 text-sm font-medium text-stone-100">live {sessionDurationLabel}</span>
+            <span className="rounded-full bg-stone-800 px-3 py-1.5 text-sm font-medium text-stone-100">viewers {currentViewerCount.toLocaleString()}</span>
+            <span className="rounded-full bg-stone-800 px-3 py-1.5 text-sm font-medium text-stone-100">likes {currentLikeCount.toLocaleString()}</span>
+            <span className="rounded-full bg-stone-800 px-3 py-1.5 text-sm font-medium text-stone-100">diamonds {currentDonationCount.toLocaleString()}</span>
+            <span className="rounded-full bg-stone-800 px-3 py-1.5 text-sm font-medium text-stone-100">~SEK {donationSek.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
             {quickSnapshot ? (
               <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-300">
                 snap {quickSnapshot.isLive ? "LIVE" : "off"} v{quickSnapshot.viewerCount.toLocaleString()}
@@ -1571,8 +1612,16 @@ export function StreamControl() {
           ) : null}
         </section>
 
-        <section className="grid min-h-0 flex-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          <aside className="min-h-0 max-h-[32dvh] rounded-2xl border border-stone-700 bg-stone-900 p-3 md:max-h-none md:col-span-1 lg:col-span-1">
+        <section
+          className="grid min-h-0 flex-1 gap-3"
+          style={{
+            gridTemplateColumns:
+              typeof window !== "undefined" && window.innerWidth >= 768
+                ? `${leftPanePercent}% 12px minmax(0, calc(100% - ${leftPanePercent}% - 12px))`
+                : "1fr",
+          }}
+        >
+          <aside className="min-h-0 max-h-[32dvh] rounded-2xl border border-stone-700 bg-stone-900 p-3 md:max-h-none">
             <div className="flex h-full flex-col">
               <h2 className="text-lg text-stone-100">Live Comments</h2>
               <p className="mt-1 text-sm text-stone-400">Show updates overlay only. Play starts YouTube only.</p>
@@ -1599,7 +1648,17 @@ export function StreamControl() {
             </div>
           </aside>
 
-          <main className="min-h-0 rounded-2xl border border-stone-700 bg-stone-900 p-3 md:col-span-1 lg:col-span-2">
+          <div className="hidden md:flex items-stretch justify-center">
+            <button
+              onMouseDown={() => setIsResizingPanes(true)}
+              onTouchStart={() => setIsResizingPanes(true)}
+              className={`w-3 rounded-full border transition ${isResizingPanes ? "border-amber-300/70 bg-amber-300/40" : "border-stone-600 bg-stone-700/70 hover:border-stone-400"}`}
+              aria-label="Resize panels"
+              title="Drag to resize panels"
+            />
+          </div>
+
+          <main className="min-h-0 rounded-2xl border border-stone-700 bg-stone-900 p-3">
             <div className="flex h-full flex-col gap-3">
               <div
                 className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
@@ -1683,15 +1742,19 @@ export function StreamControl() {
                               className="relative overflow-hidden rounded-lg border border-stone-700 bg-stone-950 transition hover:border-stone-500"
                               aria-label={`Open album with ${group.tracks.length} songs`}
                             >
-                              <div
-                                className="aspect-square w-full bg-stone-900 bg-cover bg-center"
-                                style={group.coverUrl ? { backgroundImage: `url(${group.coverUrl})` } : undefined}
-                              >
-                                {!group.coverUrl ? (
+                              <div className="aspect-square w-full bg-stone-900">
+                                {group.coverUrl ? (
+                                  <img
+                                    src={group.coverUrl}
+                                    alt={group.albumName}
+                                    className="h-full w-full object-cover [filter:none] [mix-blend-mode:normal]"
+                                    draggable={false}
+                                  />
+                                ) : (
                                   <div className="flex h-full w-full items-center justify-center text-3xl font-semibold text-stone-400">
                                     {group.albumName.trim().charAt(0).toUpperCase() || "A"}
                                   </div>
-                                ) : null}
+                                )}
                               </div>
                               <span className="pointer-events-none absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-stone-100">
                                 {group.tracks.length}

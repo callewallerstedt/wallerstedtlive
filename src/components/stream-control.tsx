@@ -368,6 +368,7 @@ function toYouTubePlayerSrc(embedUrl: string, cacheBust: number): string {
   try {
     const url = new URL(embedUrl);
     url.searchParams.set("rel", "0");
+    url.searchParams.set("autoplay", "1");
     url.searchParams.set("playsinline", "1");
     url.searchParams.set("controls", "1");
     url.searchParams.set("enablejsapi", "1");
@@ -430,76 +431,8 @@ export function StreamControl() {
   const usernameRef = useRef("");
   const lastTrackedHandleRef = useRef("");
   const isOverlayUpdatePendingRef = useRef(false);
-  const youtubeCandidatesRef = useRef<YouTubeResult[]>([]);
-  const youtubeEmbedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const youtubePlayerSrc = useMemo(() => (youtubeResult ? toYouTubePlayerSrc(youtubeResult.embedUrl, youtubeEmbedNonce) : null), [youtubeResult, youtubeEmbedNonce]);
-
-  useEffect(() => {
-    youtubeCandidatesRef.current = youtubeCandidates;
-  }, [youtubeCandidates]);
-
-  useEffect(() => {
-    if (!youtubeResult || !youtubePlayerSrc) {
-      return;
-    }
-    if (youtubeEmbedTimerRef.current) {
-      clearTimeout(youtubeEmbedTimerRef.current);
-    }
-    let settled = false;
-
-    function advanceToNextCandidate() {
-      if (settled) return;
-      settled = true;
-      const candidates = youtubeCandidatesRef.current;
-      const currentIndex = candidates.findIndex((c) => c.videoId === youtubeResult?.videoId);
-      const nextIndex = currentIndex + 1;
-      if (nextIndex < candidates.length) {
-        const next = candidates[nextIndex];
-        setYoutubeResult(next);
-        setYoutubeEmbedNonce((n) => n + 1);
-        setPlayerLabel(`${next.title} (YouTube) — retried`);
-      } else {
-        setPlayerLabel("All YouTube candidates failed to embed.");
-        setToast({ type: "error", text: "None of the YouTube matches could be embedded. Try a different search." });
-      }
-    }
-
-    function handleMessage(event: MessageEvent) {
-      if (event.origin !== "https://www.youtube.com" && event.origin !== "https://www.youtube-nocookie.com") {
-        return;
-      }
-      try {
-        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-        if (data?.event === "onError" && (data?.info === 150 || data?.info === 101)) {
-          advanceToNextCandidate();
-        }
-        if (data?.event === "onReady" || data?.event === "initialDelivery" || (data?.event === "onStateChange" && data?.info !== -1)) {
-          settled = true;
-          if (youtubeEmbedTimerRef.current) {
-            clearTimeout(youtubeEmbedTimerRef.current);
-          }
-        }
-      } catch {
-        // ignore non-YouTube messages
-      }
-    }
-
-    window.addEventListener("message", handleMessage);
-    youtubeEmbedTimerRef.current = setTimeout(() => {
-      if (!settled) {
-        advanceToNextCandidate();
-      }
-    }, 7000);
-
-    return () => {
-      window.removeEventListener("message", handleMessage);
-      if (youtubeEmbedTimerRef.current) {
-        clearTimeout(youtubeEmbedTimerRef.current);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [youtubeResult?.videoId, youtubeEmbedNonce]);
 
   async function refreshLiveState(runtimeOnly = false, runtimeUsername?: string) {
     const params = new URLSearchParams();

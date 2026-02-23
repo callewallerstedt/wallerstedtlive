@@ -127,7 +127,7 @@ function toResult(renderer: Record<string, unknown>, query: string): YouTubeSear
     viewCountText,
     thumbnailUrl,
     url: `https://www.youtube.com/watch?v=${videoId}`,
-    embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`,
+    embedUrl: `https://www.youtube.com/embed/${videoId}?rel=0`,
     query,
   };
 }

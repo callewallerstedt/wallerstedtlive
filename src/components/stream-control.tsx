@@ -1184,7 +1184,14 @@ export function StreamControl() {
   }
 
   async function playTrackOnly(track: LiveDashboardState["spotifyTracks"][number]): Promise<boolean> {
-    const query = `${track.name} ${track.artistName ?? ""} official audio`.trim();
+    const artistName = track.artistName ?? "";
+    const isOwned = isMyOrArtistTrack(track);
+    // For own tracks: skip "official audio" which finds VEVO embed-blocked uploads.
+    // Use "topic" style query that typically resolves to the YouTube Music auto-generated
+    // topic channel, which is almost always embeddable.
+    const query = isOwned
+      ? `${track.name} ${artistName} - Topic`.trim()
+      : `${track.name} ${artistName} official audio`.trim();
     setSelectedTrackId(track.id);
     setIsResolvingYoutube(true);
     try {

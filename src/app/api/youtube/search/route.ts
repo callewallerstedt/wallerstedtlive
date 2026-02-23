@@ -120,16 +120,20 @@ function toResult(renderer: Record<string, unknown>, query: string): YouTubeSear
 
 async function isLikelyEmbeddable(videoId: string): Promise<boolean> {
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
     const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`, {
       cache: "no-store",
+      signal: controller.signal,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
       },
     });
+    clearTimeout(timer);
     return response.ok;
   } catch {
-    return false;
+    return true; // assume embeddable on timeout/error to avoid blocking everything
   }
 }
 

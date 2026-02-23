@@ -1189,8 +1189,8 @@ export function StreamControl() {
     const isOwned = isMyOrArtistTrack(track);
     // Lyrics videos for own tracks (embeddable); official audio for external/comments (as that path works).
     const query = isOwned
-      ? `${track.name} lyrics ${artistName}`.trim()
-      : `${track.name} ${artistName} official audio`.trim();
+      ? `${track.name} ${artistName} audio -kids -nursery -lullaby -cocomelon -baby`.trim()
+      : `${track.name} ${artistName} official audio -kids -nursery -lullaby -cocomelon -baby`.trim();
     setSelectedTrackId(track.id);
     setIsResolvingYoutube(true);
     try {

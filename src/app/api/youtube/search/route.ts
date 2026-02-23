@@ -88,6 +88,12 @@ function findVideoRenderers(node: unknown, limit: number): Record<string, unknow
   return found;
 }
 
+function isKidLikeResult(title: string, channelTitle: string): boolean {
+  const text = `${title} ${channelTitle}`.toLowerCase();
+  const blocked = ["kids", "nursery", "lullaby", "cocomelon", "baby shark", "super simple songs", "little angel", "pinkfong"];
+  return blocked.some((token) => text.includes(token));
+}
+
 function toResult(renderer: Record<string, unknown>, query: string): YouTubeSearchResult | null {
   const videoId = typeof renderer.videoId === "string" ? renderer.videoId : "";
   if (!videoId) {
@@ -105,6 +111,10 @@ function toResult(renderer: Record<string, unknown>, query: string): YouTubeSear
     Array.isArray(thumbnails) && thumbnails.length > 0
       ? (thumbnails[thumbnails.length - 1]?.url as string | undefined) ?? null
       : null;
+
+  if (isKidLikeResult(title, channelTitle)) {
+    return null;
+  }
 
   return {
     videoId,

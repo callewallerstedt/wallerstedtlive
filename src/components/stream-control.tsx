@@ -370,6 +370,10 @@ function toYouTubePlayerSrc(embedUrl: string, cacheBust: number): string {
     url.searchParams.set("rel", "0");
     url.searchParams.set("playsinline", "1");
     url.searchParams.set("controls", "1");
+    url.searchParams.set("enablejsapi", "1");
+    if (typeof window !== "undefined") {
+      url.searchParams.set("origin", window.location.origin);
+    }
     url.searchParams.set("cb", cacheBust.toString());
     return url.toString();
   } catch {
@@ -425,8 +429,77 @@ export function StreamControl() {
   const usernameInputFocusedRef = useRef(false);
   const usernameRef = useRef("");
   const lastTrackedHandleRef = useRef("");
+  const isOverlayUpdatePendingRef = useRef(false);
+  const youtubeCandidatesRef = useRef<YouTubeResult[]>([]);
+  const youtubeEmbedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const youtubePlayerSrc = useMemo(() => (youtubeResult ? toYouTubePlayerSrc(youtubeResult.embedUrl, youtubeEmbedNonce) : null), [youtubeResult, youtubeEmbedNonce]);
+
+  useEffect(() => {
+    youtubeCandidatesRef.current = youtubeCandidates;
+  }, [youtubeCandidates]);
+
+  useEffect(() => {
+    if (!youtubeResult || !youtubePlayerSrc) {
+      return;
+    }
+    if (youtubeEmbedTimerRef.current) {
+      clearTimeout(youtubeEmbedTimerRef.current);
+    }
+    let settled = false;
+
+    function advanceToNextCandidate() {
+      if (settled) return;
+      settled = true;
+      const candidates = youtubeCandidatesRef.current;
+      const currentIndex = candidates.findIndex((c) => c.videoId === youtubeResult?.videoId);
+      const nextIndex = currentIndex + 1;
+      if (nextIndex < candidates.length) {
+        const next = candidates[nextIndex];
+        setYoutubeResult(next);
+        setYoutubeEmbedNonce((n) => n + 1);
+        setPlayerLabel(`${next.title} (YouTube) — retried`);
+      } else {
+        setPlayerLabel("All YouTube candidates failed to embed.");
+        setToast({ type: "error", text: "None of the YouTube matches could be embedded. Try a different search." });
+      }
+    }
+
+    function handleMessage(event: MessageEvent) {
+      if (event.origin !== "https://www.youtube.com" && event.origin !== "https://www.youtube-nocookie.com") {
+        return;
+      }
+      try {
+        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (data?.event === "onError" && (data?.info === 150 || data?.info === 101)) {
+          advanceToNextCandidate();
+        }
+        if (data?.event === "onReady" || data?.event === "initialDelivery" || (data?.event === "onStateChange" && data?.info !== -1)) {
+          settled = true;
+          if (youtubeEmbedTimerRef.current) {
+            clearTimeout(youtubeEmbedTimerRef.current);
+          }
+        }
+      } catch {
+        // ignore non-YouTube messages
+      }
+    }
+
+    window.addEventListener("message", handleMessage);
+    youtubeEmbedTimerRef.current = setTimeout(() => {
+      if (!settled) {
+        advanceToNextCandidate();
+      }
+    }, 7000);
+
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      if (youtubeEmbedTimerRef.current) {
+        clearTimeout(youtubeEmbedTimerRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [youtubeResult?.videoId, youtubeEmbedNonce]);
 
   async function refreshLiveState(runtimeOnly = false, runtimeUsername?: string) {
     const params = new URLSearchParams();
@@ -473,17 +546,31 @@ export function StreamControl() {
   }
 
   async function refreshOverlayState() {
+    if (isOverlayUpdatePendingRef.current) {
+      return;
+    }
     const response = await fetch("/api/overlay/state", { cache: "no-store" });
     const payload = (await response.json()) as unknown;
     if (!response.ok) {
       const root = asRecord(payload);
       throw new Error(typeof root?.error === "string" ? root.error : "Failed to load overlay state");
     }
+    if (isOverlayUpdatePendingRef.current) {
+      return;
+    }
     const parsed = parseOverlayState(payload);
     if (!parsed) {
       throw new Error("Overlay state payload invalid");
     }
-    setOverlayState(parsed);
+    setOverlayState((prev) => {
+      if (!prev || !parsed) return parsed;
+      const prevTs = Date.parse(prev.updatedAt);
+      const nextTs = Date.parse(parsed.updatedAt);
+      if (Number.isFinite(prevTs) && Number.isFinite(nextTs) && nextTs < prevTs) {
+        return prev;
+      }
+      return parsed;
+    });
   }
 
   async function refreshGoalsState() {
@@ -564,24 +651,29 @@ export function StreamControl() {
       updatedBy: payload.updatedBy ?? "ipad",
     };
     setOverlayState(optimisticOverlay);
+    isOverlayUpdatePendingRef.current = true;
 
-    const response = await fetch("/api/overlay/state", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, updatedBy: payload.updatedBy ?? "ipad" }),
-    });
-    const result = (await response.json()) as unknown;
-    if (!response.ok) {
-      setOverlayState(previousOverlay);
-      const root = asRecord(result);
-      throw new Error(typeof root?.error === "string" ? root.error : "Overlay update failed");
+    try {
+      const response = await fetch("/api/overlay/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, updatedBy: payload.updatedBy ?? "ipad" }),
+      });
+      const result = (await response.json()) as unknown;
+      if (!response.ok) {
+        setOverlayState(previousOverlay);
+        const root = asRecord(result);
+        throw new Error(typeof root?.error === "string" ? root.error : "Overlay update failed");
+      }
+      const parsed = parseOverlayState(result);
+      if (!parsed) {
+        setOverlayState(previousOverlay);
+        throw new Error("Overlay update payload invalid");
+      }
+      setOverlayState(parsed);
+    } finally {
+      isOverlayUpdatePendingRef.current = false;
     }
-    const parsed = parseOverlayState(result);
-    if (!parsed) {
-      setOverlayState(previousOverlay);
-      throw new Error("Overlay update payload invalid");
-    }
-    setOverlayState(parsed);
   }
 
   async function updateGoals(payload: GoalsUpdatePayload) {
@@ -1187,10 +1279,9 @@ export function StreamControl() {
   async function playTrackOnly(track: LiveDashboardState["spotifyTracks"][number]): Promise<boolean> {
     const artistName = track.artistName ?? "";
     const isOwned = isMyOrArtistTrack(track);
-    // Lyrics videos for own tracks (embeddable); official audio for external/comments (as that path works).
     const query = isOwned
-      ? `${track.name} ${artistName} audio -kids -nursery -lullaby -cocomelon -baby`.trim()
-      : `${track.name} ${artistName} official audio -kids -nursery -lullaby -cocomelon -baby`.trim();
+      ? `${track.name} ${artistName} audio`.trim()
+      : `${track.name} ${artistName} official audio`.trim();
     setSelectedTrackId(track.id);
     setIsResolvingYoutube(true);
     try {
@@ -1272,8 +1363,8 @@ export function StreamControl() {
   }
 
   async function playTrackFromAlbumModal(track: LiveDashboardState["spotifyTracks"][number]) {
-    setAlbumModalKey(null);
     setActivePanel("player");
+    setAlbumModalKey(null);
     const played = await playTrackOnly(track);
     if (played) {
       setToast({ type: "success", text: "YouTube loaded in player. Overlay unchanged." });

@@ -1,28 +1,36 @@
-const WORKER_URL = process.env.LIVE_WORKER_URL?.trim();
-const WORKER_TOKEN = process.env.LIVE_WORKER_API_TOKEN?.trim();
+function getWorkerUrl(): string {
+  return (process.env["LIVE_WORKER_URL"] || "").trim();
+}
+
+function getWorkerToken(): string {
+  return (process.env["LIVE_WORKER_API_TOKEN"] || "").trim();
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function hasLiveWorkerConfigured(): boolean {
-  return Boolean(WORKER_URL);
+  return Boolean(getWorkerUrl());
 }
 
 export async function callLiveWorker<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  if (!WORKER_URL) {
+  const workerUrl = getWorkerUrl();
+  const workerToken = getWorkerToken();
+
+  if (!workerUrl) {
     throw new Error("LIVE_WORKER_URL is not configured");
   }
 
   const attempts = 3;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const response = await fetch(`${WORKER_URL}${path}`, {
+    const response = await fetch(`${workerUrl}${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         // localtunnel free domains can require this header to skip the interstitial page
         "bypass-tunnel-reminder": "true",
-        ...(WORKER_TOKEN ? { Authorization: `Bearer ${WORKER_TOKEN}` } : {}),
+        ...(workerToken ? { Authorization: `Bearer ${workerToken}` } : {}),
       },
       body: JSON.stringify(body),
       cache: "no-store",

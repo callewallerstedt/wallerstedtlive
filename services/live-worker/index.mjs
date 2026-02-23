@@ -239,6 +239,7 @@ function startStreamingJob(sessionId, input) {
     totalDiamonds: 0,
     warnings: [],
     finalized: false,
+    lastSessionUpdateAtMs: 0,
   };
 
   let stderr = "";
@@ -320,18 +321,28 @@ function startStreamingJob(sessionId, input) {
           await prisma.tikTokLiveSample.create({
             data: { sessionId, capturedAt, viewerCount, likeCount, enterCount },
           });
-          await prisma.tikTokLiveSession.update({
-            where: { id: sessionId },
-            data: {
-              viewerCountPeak: state.viewerPeak,
-              viewerCountAvg: avg,
-              likeCountLatest: likeCount,
-              enterCountLatest: enterCount,
-              totalCommentEvents: state.totalComments,
-              totalGiftEvents: state.totalGifts,
-              totalGiftDiamonds: state.totalDiamonds,
-            },
-          });
+
+          const nowMs = Date.now();
+          const shouldUpdateSession =
+            state.lastSessionUpdateAtMs === 0 ||
+            nowMs - state.lastSessionUpdateAtMs >= 1000 ||
+            state.sampleCount % 10 === 0;
+
+          if (shouldUpdateSession) {
+            await prisma.tikTokLiveSession.update({
+              where: { id: sessionId },
+              data: {
+                viewerCountPeak: state.viewerPeak,
+                viewerCountAvg: avg,
+                likeCountLatest: likeCount,
+                enterCountLatest: enterCount,
+                totalCommentEvents: state.totalComments,
+                totalGiftEvents: state.totalGifts,
+                totalGiftDiamonds: state.totalDiamonds,
+              },
+            });
+            state.lastSessionUpdateAtMs = nowMs;
+          }
         }, state);
       });
       return;

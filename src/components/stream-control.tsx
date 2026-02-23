@@ -1143,6 +1143,7 @@ export function StreamControl() {
         return false;
       }
       setYoutubeResult(matches[0]);
+      setYoutubeEmbedNonce((n) => n + 1);
       setPlayerLabel(`${matches[0].title} (YouTube)`);
       return true;
     } catch (error) {
@@ -1196,6 +1197,7 @@ export function StreamControl() {
         return false;
       }
       setYoutubeResult(matches[0]);
+      setYoutubeEmbedNonce((n) => n + 1);
       setPlayerLabel(`${matches[0].title} (YouTube)`);
       return true;
     } catch (error) {
@@ -1653,6 +1655,7 @@ export function StreamControl() {
                             key={candidate.videoId}
                             onClick={() => {
                               setYoutubeResult(candidate);
+                              setYoutubeEmbedNonce((n) => n + 1);
                               setPlayerLabel(`${candidate.title} (YouTube)`);
                                                                           }}
                             className={`w-full rounded border px-2 py-2 text-left text-xs ${youtubeResult?.videoId === candidate.videoId ? "border-red-300/60 bg-red-400/10 text-red-100" : "border-stone-700 bg-stone-950 text-stone-200"}`}

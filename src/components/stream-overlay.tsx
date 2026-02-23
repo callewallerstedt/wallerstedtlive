@@ -330,6 +330,11 @@ export function StreamOverlay() {
     if (root.state) {
       const nextState = root.state;
       setState((prev) => {
+        const prevTs = Date.parse(prev.updatedAt);
+        const nextTs = Date.parse(nextState.updatedAt);
+        if (Number.isFinite(prevTs) && Number.isFinite(nextTs) && nextTs < prevTs) {
+          return prev;
+        }
         if (
           prev.mode === nextState.mode &&
           prev.title === nextState.title &&

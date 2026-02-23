@@ -430,6 +430,7 @@ export function StreamControl() {
   const isOverlayRefreshInFlightRef = useRef(false);
   const isLiveRefreshInFlightRef = useRef(false);
   const isGoalsRefreshInFlightRef = useRef(false);
+  const liveAbortRef = useRef<AbortController | null>(null);
   const goalsInitializedRef = useRef(false);
   const usernameInputFocusedRef = useRef(false);
   const usernameRef = useRef("");
@@ -439,6 +440,13 @@ export function StreamControl() {
   const youtubePlayerSrc = useMemo(() => (youtubeResult ? toYouTubePlayerSrc(youtubeResult.embedUrl, youtubeEmbedNonce) : null), [youtubeResult, youtubeEmbedNonce]);
 
   async function refreshLiveState(runtimeOnly = false, runtimeUsername?: string) {
+    if (runtimeOnly && liveAbortRef.current) {
+      liveAbortRef.current.abort();
+    }
+    const ac = runtimeOnly ? new AbortController() : null;
+    if (runtimeOnly) {
+      liveAbortRef.current = ac;
+    }
     const params = new URLSearchParams();
     if (runtimeOnly) {
       params.set("runtime", "1");
@@ -451,6 +459,7 @@ export function StreamControl() {
     const url = query ? `/api/tiktok/live/state?${query}` : "/api/tiktok/live/state";
     const response = await fetch(url, {
       cache: "no-store",
+      signal: ac?.signal,
     });
     const data = (await response.json()) as LiveDashboardState | { error?: string };
     if (!response.ok || ("error" in data && typeof data.error === "string")) {
@@ -688,15 +697,15 @@ export function StreamControl() {
       });
     }, 1400);
     const liveTimer = setInterval(() => {
-      if (isLiveRefreshInFlightRef.current) {
+      if (document.hidden) {
         return;
       }
-      isLiveRefreshInFlightRef.current = true;
       const runtimeHint = lastTrackedHandleRef.current || usernameRef.current || undefined;
+      isLiveRefreshInFlightRef.current = true;
       refreshLiveState(true, runtimeHint).catch(() => undefined).finally(() => {
         isLiveRefreshInFlightRef.current = false;
       });
-    }, 700);
+    }, 800);
     const goalsTimer = setInterval(() => {
       if (isGoalsRefreshInFlightRef.current) {
         return;

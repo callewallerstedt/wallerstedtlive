@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getStreamOverlayState } from "@/lib/stream-overlay";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
@@ -18,10 +19,15 @@ export async function GET() {
           id: true,
           endedAt: true,
           likeCountLatest: true,
+          enterCountLatest: true,
           totalGiftDiamonds: true,
+          totalCommentEvents: true,
+          totalGiftEvents: true,
+          viewerCountPeak: true,
+          viewerCountAvg: true,
           gifts: {
             orderBy: { createdAt: "desc" },
-            take: 140,
+            take: 100,
             select: {
               id: true,
               giftName: true,
@@ -30,11 +36,36 @@ export async function GET() {
               createdAt: true,
             },
           },
+          comments: {
+            orderBy: { createdAt: "desc" },
+            take: 30,
+            select: {
+              id: true,
+              comment: true,
+              userUniqueId: true,
+              nickname: true,
+              createdAt: true,
+            },
+          },
+          samples: {
+            orderBy: { capturedAt: "desc" },
+            take: 1,
+            select: {
+              viewerCount: true,
+              likeCount: true,
+              enterCount: true,
+              capturedAt: true,
+            },
+          },
         },
       }),
     ]);
 
-    return NextResponse.json({ state, goals, session: active });
+    return NextResponse.json({ state, goals, session: active }, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown overlay runtime error";
     return NextResponse.json({ error: message }, { status: 500 });

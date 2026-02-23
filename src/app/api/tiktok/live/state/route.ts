@@ -16,29 +16,30 @@ export async function GET(request: Request) {
     const runtimeMode = url.searchParams.get("runtime") === "1";
     const runtimeUsername = url.searchParams.get("username")?.trim().replace(/^@/, "") || undefined;
     const config = await getOrCreateConfig();
-    // Critical: when live-worker is active, do NOT run serverless refresh here.
-    // The worker already streams data into DB; calling refreshLiveTrackingSnapshot
-    // blocks this endpoint on slow upstream checks and causes 10-30s UI lag.
+
+    // Fire-and-forget: never block the response on slow upstream TikTok calls.
+    // The refresh writes to DB in the background; the next poll picks it up.
     if (runtimeMode && !hasLiveWorkerConfigured()) {
-      await refreshLiveTrackingSnapshot(runtimeUsername ?? config.tiktokHandle ?? undefined).catch(() => undefined);
+      refreshLiveTrackingSnapshot(runtimeUsername ?? config.tiktokHandle ?? undefined).catch(() => undefined);
     }
+
     const [liveSessions, latestSyncEvents, spotifyTracks] = runtimeMode
       ? await Promise.all([
           prisma.tikTokLiveSession.findMany({
             orderBy: { startedAt: "desc" },
-            take: 6,
+            take: 2,
             include: {
               samples: {
-                orderBy: { capturedAt: "asc" },
-                take: 1200,
+                orderBy: { capturedAt: "desc" },
+                take: 200,
               },
               comments: {
-                orderBy: { createdAt: "asc" },
-                take: 600,
+                orderBy: { createdAt: "desc" },
+                take: 80,
               },
               gifts: {
-                orderBy: { createdAt: "asc" },
-                take: 600,
+                orderBy: { createdAt: "desc" },
+                take: 80,
               },
             },
           }),

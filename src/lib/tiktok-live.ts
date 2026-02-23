@@ -100,9 +100,9 @@ type PythonInvocation = { command: string; prefixArgs: string[] };
 let cachedPythonInvocation: PythonInvocation | null | undefined;
 const POLL_SOURCE = "tiktoklive-vercel-poll";
 const SERVERLESS_MIN_SAMPLE_INTERVAL_MS = (() => {
-  const raw = Number(process.env.TIKTOK_SERVERLESS_MIN_SAMPLE_INTERVAL_MS ?? 8000);
+  const raw = Number(process.env.TIKTOK_SERVERLESS_MIN_SAMPLE_INTERVAL_MS ?? 4000);
   if (!Number.isFinite(raw)) {
-    return 8000;
+    return 4000;
   }
   return Math.max(2000, Math.round(raw));
 })();
@@ -970,27 +970,29 @@ function startStreamingJob(sessionId: string, input: TrackLiveInput): void {
       const avg = Number((state.viewerSum / Math.max(1, state.sampleCount)).toFixed(2));
 
       enqueue(async () => {
-        await prisma.tikTokLiveSample.create({
-          data: {
-            sessionId,
-            capturedAt,
-            viewerCount,
-            likeCount,
-            enterCount,
-          },
-        });
-        await prisma.tikTokLiveSession.update({
-          where: { id: sessionId },
-          data: {
-            viewerCountPeak: state.viewerPeak,
-            viewerCountAvg: avg,
-            likeCountLatest: likeCount,
-            enterCountLatest: enterCount,
-            totalCommentEvents: state.totalComments,
-            totalGiftEvents: state.totalGifts,
-            totalGiftDiamonds: state.totalDiamonds,
-          },
-        });
+        await Promise.all([
+          prisma.tikTokLiveSample.create({
+            data: {
+              sessionId,
+              capturedAt,
+              viewerCount,
+              likeCount,
+              enterCount,
+            },
+          }),
+          prisma.tikTokLiveSession.update({
+            where: { id: sessionId },
+            data: {
+              viewerCountPeak: state.viewerPeak,
+              viewerCountAvg: avg,
+              likeCountLatest: likeCount,
+              enterCountLatest: enterCount,
+              totalCommentEvents: state.totalComments,
+              totalGiftEvents: state.totalGifts,
+              totalGiftDiamonds: state.totalDiamonds,
+            },
+          }),
+        ]);
       });
       return;
     }

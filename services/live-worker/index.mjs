@@ -15,8 +15,8 @@ if (!BASE_DB_URL) {
 }
 
 const DB_URL = BASE_DB_URL.includes("?")
-  ? `${BASE_DB_URL}&connection_limit=1&pool_timeout=5&pgbouncer=true&prepare_threshold=0`
-  : `${BASE_DB_URL}?connection_limit=1&pool_timeout=5&pgbouncer=true&prepare_threshold=0`;
+  ? `${BASE_DB_URL}&connection_limit=3&pool_timeout=5&pgbouncer=true&prepare_threshold=0`
+  : `${BASE_DB_URL}?connection_limit=3&pool_timeout=5&pgbouncer=true&prepare_threshold=0`;
 
 const prisma = new PrismaClient({
   datasources: { db: { url: DB_URL } },
@@ -238,7 +238,6 @@ function startStreamingJob(sessionId, input) {
     totalDiamonds: 0,
     warnings: [],
     finalized: false,
-    lastSessionUpdateAtMs: 0,
   };
 
   let stderr = "";
@@ -339,18 +338,11 @@ function startStreamingJob(sessionId, input) {
 
       enqueue(async () => {
         await safeDbWrite(async () => {
-          await prisma.tikTokLiveSample.create({
-            data: { sessionId, capturedAt, viewerCount, likeCount, enterCount },
-          });
-
-          const nowMs = Date.now();
-          const shouldUpdateSession =
-            state.lastSessionUpdateAtMs === 0 ||
-            nowMs - state.lastSessionUpdateAtMs >= 1000 ||
-            state.sampleCount % 10 === 0;
-
-          if (shouldUpdateSession) {
-            await prisma.tikTokLiveSession.update({
+          await Promise.all([
+            prisma.tikTokLiveSample.create({
+              data: { sessionId, capturedAt, viewerCount, likeCount, enterCount },
+            }),
+            prisma.tikTokLiveSession.update({
               where: { id: sessionId },
               data: {
                 viewerCountPeak: state.viewerPeak,
@@ -361,9 +353,8 @@ function startStreamingJob(sessionId, input) {
                 totalGiftEvents: state.totalGifts,
                 totalGiftDiamonds: state.totalDiamonds,
               },
-            });
-            state.lastSessionUpdateAtMs = nowMs;
-          }
+            }),
+          ]);
         }, state);
       });
       return;

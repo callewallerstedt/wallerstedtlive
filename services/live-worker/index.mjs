@@ -450,22 +450,34 @@ async function startTrack(body) {
   const username = normalizeUsername(body.username);
   if (!username) throw new Error("Username is required");
 
+  const forceRestart = body.forceRestartIfRunning ?? true;
   let restarted = false;
-  const existingSessionId = activeSessionByUsername.get(username);
-  if (existingSessionId && activeJobsBySession.has(existingSessionId)) {
-    if (body.forceRestartIfRunning ?? true) {
-      stopTrack({ username });
-      restarted = true;
+
+  const activeEntries = Array.from(activeSessionByUsername.entries());
+  if (activeEntries.length > 0) {
+    if (forceRestart) {
+      for (const [activeUsername] of activeEntries) {
+        const result = stopTrack({ username: activeUsername });
+        if (result.stopped) restarted = true;
+      }
+
+      const closed = await prisma.tikTokLiveSession.updateMany({
+        where: { endedAt: null },
+        data: { endedAt: new Date(), error: `Restarted by user (switched to @${username}).` },
+      });
+      if (closed.count > 0) restarted = true;
     } else {
-      return { sessionId: existingSessionId, started: false, message: "Tracking already running" };
+      const [runningUsername] = activeEntries[0];
+      return {
+        started: false,
+        message: `Tracking is already running for @${runningUsername}. Stop it first or restart with a new username.`,
+      };
     }
   }
 
-  const snapshot = await runCheck(username);
-  if (!snapshot.isLive) {
-    return { started: false, message: "This user is offline right now. Start again when they are live." };
-  }
-
+  // Do not pre-check with a separate connector session here.
+  // It causes extra connection starts and can hit TikTokLive sign-server limits.
+  // We start the stream directly and let stream meta/end events decide live/offline state.
   const durationRaw = Math.floor(Number(body.durationSec ?? 0));
   const durationSec = durationRaw <= 0 ? 0 : Math.max(15, Math.min(21600, durationRaw));
   const pollIntervalSec = clampSampleIntervalSec(Number(body.pollIntervalSec ?? 0.5), 0.5);
@@ -548,6 +560,50 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const username = normalizeUsername(body.username);
       if (!username) return json(res, 400, { error: "username is required" });
+
+      // Fast path: if we already have an active session for this username,
+      // return latest known values instead of opening another TikTokLive connection.
+      const active = await prisma.tikTokLiveSession.findFirst({
+        where: { username, endedAt: null },
+        orderBy: { startedAt: "desc" },
+        include: { samples: { orderBy: { capturedAt: "desc" }, take: 1 } },
+      });
+      if (active) {
+        const sample = active.samples[0];
+        const sampleAgeMs = sample ? Date.now() - new Date(sample.capturedAt).getTime() : Number.POSITIVE_INFINITY;
+
+        // If we have fresh session data, use cache (avoids opening extra TikTok connections).
+        if (sample && sampleAgeMs < 10_000) {
+          return json(res, 200, {
+            ok: true,
+            snapshot: {
+              ok: true,
+              mode: "check",
+              username,
+              isLive: Boolean(active.isLive),
+              statusCode: active.statusCode ?? 0,
+              viewerCount: sample.viewerCount ?? 0,
+              likeCount: sample.likeCount ?? active.likeCountLatest ?? 0,
+              enterCount: sample.enterCount ?? active.enterCountLatest ?? 0,
+              roomId: active.roomId,
+              title: active.title,
+              fetchedAt: new Date().toISOString(),
+              samples: [
+                {
+                  capturedAt: sample.capturedAt,
+                  viewerCount: sample.viewerCount,
+                  likeCount: sample.likeCount,
+                  enterCount: sample.enterCount,
+                },
+              ],
+              comments: [],
+              gifts: [],
+              warnings: ["served from active session cache"],
+            },
+          });
+        }
+      }
+
       const snapshot = await runCheck(username);
       return json(res, 200, { ok: true, snapshot });
     }

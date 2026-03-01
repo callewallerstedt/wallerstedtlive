@@ -7,6 +7,7 @@ const items = [
   { href: "/", label: "Strategy" },
   { href: "/live", label: "Live Tracker" },
   { href: "/live-dash", label: "Live Dash" },
+  { href: "/live-view", label: "Live View" },
   { href: "/stream-control", label: "Stream Control" },
   { href: "/stream-overlay", label: "Stream Overlay" },
 ];

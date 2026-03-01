@@ -96,6 +96,7 @@ type JobState = {
 
 const activeJobsBySession = new Map<string, ActiveJob>();
 const activeSessionByUsername = new Map<string, string>();
+const serverlessRefreshBySession = new Map<string, Promise<void>>();
 type PythonInvocation = { command: string; prefixArgs: string[] };
 let cachedPythonInvocation: PythonInvocation | null | undefined;
 const POLL_SOURCE = "tiktoklive-vercel-poll";
@@ -1165,6 +1166,9 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
     throw new Error("Username is required.");
   }
   const serverlessMode = isServerlessRuntime();
+  if (serverlessMode) {
+    throw new Error("Serverless polling mode is disabled. Use the live worker server via LIVE_WORKER_URL.");
+  }
 
   let restartedExisting = false;
   if (input.forceRestartIfRunning) {
@@ -1319,14 +1323,6 @@ export async function startLiveTrackingByUsername(input: TrackLiveInput): Promis
     });
   }
 
-  if (serverlessMode) {
-    return {
-      sessionId: session.id,
-      started: true,
-      message: restartedExisting ? "Live tracker restarted (Vercel polling mode)." : "Live tracking started (Vercel polling mode).",
-    };
-  }
-
   startStreamingJob(session.id, {
     username,
     durationSec,
@@ -1450,103 +1446,120 @@ export async function refreshLiveTrackingSnapshot(rawUsername?: string): Promise
     return;
   }
 
-  const [sampleCount, latestSample] = await Promise.all([
-    prisma.tikTokLiveSample.count({
-      where: { sessionId: activeSession.id },
-    }),
-    prisma.tikTokLiveSample.findFirst({
-      where: { sessionId: activeSession.id },
-      orderBy: { capturedAt: "desc" },
-      select: { capturedAt: true },
-    }),
-  ]);
-  if (latestSample) {
-    const elapsedMs = Date.now() - new Date(latestSample.capturedAt).getTime();
-    if (elapsedMs < SERVERLESS_MIN_SAMPLE_INTERVAL_MS) {
-      return;
-    }
+  const inFlight = serverlessRefreshBySession.get(activeSession.id);
+  if (inFlight) {
+    await inFlight;
+    return;
   }
 
-  let snapshot: LiveSnapshot;
-  try {
-    snapshot = await fetchLiveSnapshotByUsername(activeSession.username);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Live refresh failed.";
+  const refreshPromise = (async () => {
+    const [sampleCount, latestSample] = await Promise.all([
+      prisma.tikTokLiveSample.count({
+        where: { sessionId: activeSession.id },
+      }),
+      prisma.tikTokLiveSample.findFirst({
+        where: { sessionId: activeSession.id },
+        orderBy: { capturedAt: "desc" },
+        select: { capturedAt: true },
+      }),
+    ]);
+    if (latestSample) {
+      const elapsedMs = Date.now() - new Date(latestSample.capturedAt).getTime();
+      if (elapsedMs < SERVERLESS_MIN_SAMPLE_INTERVAL_MS) {
+        return;
+      }
+    }
+
+    let snapshot: LiveSnapshot;
+    try {
+      snapshot = await fetchLiveSnapshotByUsername(activeSession.username);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Live refresh failed.";
+      await prisma.tikTokLiveSession.update({
+        where: { id: activeSession.id },
+        data: {
+          error: message,
+        },
+      });
+      return;
+    }
+    const nextSampleCount = sampleCount + 1;
+    const avg = Number(
+      ((activeSession.viewerCountAvg * sampleCount + snapshot.viewerCount) / Math.max(1, nextSampleCount)).toFixed(2)
+    );
+    const effectiveLikeCount = snapshot.likeCount > 0 ? snapshot.likeCount : activeSession.likeCountLatest;
+    const effectiveEnterCount = Math.max(activeSession.enterCountLatest, snapshot.enterCount);
+    const capturedComments = snapshot.comments ?? [];
+    const capturedGifts = snapshot.gifts ?? [];
+    const capturedDiamonds = capturedGifts.reduce(
+      (sum, gift) => sum + Math.max(0, gift.diamondCount) * Math.max(1, gift.repeatCount),
+      0
+    );
+
+    await prisma.tikTokLiveSample.create({
+      data: {
+        sessionId: activeSession.id,
+        capturedAt: snapshot.fetchedAt,
+        viewerCount: snapshot.viewerCount,
+        likeCount: effectiveLikeCount,
+        enterCount: effectiveEnterCount,
+      },
+    });
+
+    if (capturedComments.length > 0) {
+      await prisma.tikTokLiveComment.createMany({
+        data: capturedComments.map((comment) => ({
+          sessionId: activeSession.id,
+          createdAt: comment.createdAt,
+          userUniqueId: comment.userUniqueId,
+          nickname: comment.nickname,
+          comment: comment.comment,
+        })),
+      });
+    }
+
+    if (capturedGifts.length > 0) {
+      await prisma.tikTokLiveGift.createMany({
+        data: capturedGifts.map((gift) => ({
+          sessionId: activeSession.id,
+          createdAt: gift.createdAt,
+          userUniqueId: gift.userUniqueId,
+          nickname: gift.nickname,
+          giftName: gift.giftName,
+          diamondCount: gift.diamondCount,
+          repeatCount: gift.repeatCount,
+        })),
+      });
+    }
+
     await prisma.tikTokLiveSession.update({
       where: { id: activeSession.id },
       data: {
-        error: message,
+        isLive: snapshot.isLive,
+        statusCode: snapshot.statusCode ?? activeSession.statusCode ?? null,
+        roomId: snapshot.roomId ?? activeSession.roomId ?? null,
+        title: snapshot.title ?? activeSession.title ?? null,
+        viewerCountPeak: Math.max(activeSession.viewerCountPeak, snapshot.viewerCount),
+        viewerCountAvg: avg,
+        likeCountLatest: effectiveLikeCount,
+        enterCountLatest: effectiveEnterCount,
+        totalCommentEvents: activeSession.totalCommentEvents + capturedComments.length,
+        totalGiftEvents: activeSession.totalGiftEvents + capturedGifts.length,
+        totalGiftDiamonds: activeSession.totalGiftDiamonds + capturedDiamonds,
+        ...(snapshot.isLive ? { error: null } : {}),
+        ...(snapshot.isLive ? {} : { endedAt: new Date(), error: "User is currently offline." }),
       },
     });
-    return;
+  })();
+
+  serverlessRefreshBySession.set(activeSession.id, refreshPromise);
+  try {
+    await refreshPromise;
+  } finally {
+    if (serverlessRefreshBySession.get(activeSession.id) === refreshPromise) {
+      serverlessRefreshBySession.delete(activeSession.id);
+    }
   }
-  const nextSampleCount = sampleCount + 1;
-  const avg = Number(
-    ((activeSession.viewerCountAvg * sampleCount + snapshot.viewerCount) / Math.max(1, nextSampleCount)).toFixed(2)
-  );
-  const effectiveLikeCount = snapshot.likeCount > 0 ? snapshot.likeCount : activeSession.likeCountLatest;
-  const effectiveEnterCount = Math.max(activeSession.enterCountLatest, snapshot.enterCount);
-  const capturedComments = snapshot.comments ?? [];
-  const capturedGifts = snapshot.gifts ?? [];
-  const capturedDiamonds = capturedGifts.reduce(
-    (sum, gift) => sum + Math.max(0, gift.diamondCount) * Math.max(1, gift.repeatCount),
-    0
-  );
-
-  await prisma.tikTokLiveSample.create({
-    data: {
-      sessionId: activeSession.id,
-      capturedAt: snapshot.fetchedAt,
-      viewerCount: snapshot.viewerCount,
-      likeCount: effectiveLikeCount,
-      enterCount: effectiveEnterCount,
-    },
-  });
-
-  if (capturedComments.length > 0) {
-    await prisma.tikTokLiveComment.createMany({
-      data: capturedComments.map((comment) => ({
-        sessionId: activeSession.id,
-        createdAt: comment.createdAt,
-        userUniqueId: comment.userUniqueId,
-        nickname: comment.nickname,
-        comment: comment.comment,
-      })),
-    });
-  }
-
-  if (capturedGifts.length > 0) {
-    await prisma.tikTokLiveGift.createMany({
-      data: capturedGifts.map((gift) => ({
-        sessionId: activeSession.id,
-        createdAt: gift.createdAt,
-        userUniqueId: gift.userUniqueId,
-        nickname: gift.nickname,
-        giftName: gift.giftName,
-        diamondCount: gift.diamondCount,
-        repeatCount: gift.repeatCount,
-      })),
-    });
-  }
-
-  await prisma.tikTokLiveSession.update({
-    where: { id: activeSession.id },
-    data: {
-      isLive: snapshot.isLive,
-      statusCode: snapshot.statusCode ?? activeSession.statusCode ?? null,
-      roomId: snapshot.roomId ?? activeSession.roomId ?? null,
-      title: snapshot.title ?? activeSession.title ?? null,
-      viewerCountPeak: Math.max(activeSession.viewerCountPeak, snapshot.viewerCount),
-      viewerCountAvg: avg,
-      likeCountLatest: effectiveLikeCount,
-      enterCountLatest: effectiveEnterCount,
-      totalCommentEvents: activeSession.totalCommentEvents + capturedComments.length,
-      totalGiftEvents: activeSession.totalGiftEvents + capturedGifts.length,
-      totalGiftDiamonds: activeSession.totalGiftDiamonds + capturedDiamonds,
-      ...(snapshot.isLive ? { error: null } : {}),
-      ...(snapshot.isLive ? {} : { endedAt: new Date(), error: "User is currently offline." }),
-    },
-  });
 }
 
 export async function deleteLiveSessionById(sessionId: string): Promise<{ deleted: boolean; message: string }> {

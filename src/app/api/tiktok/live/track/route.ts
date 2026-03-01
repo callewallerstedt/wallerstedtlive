@@ -5,7 +5,6 @@ import { z } from "zod";
 
 import { updateConfig } from "@/lib/config";
 import { callLiveWorker, hasLiveWorkerConfigured } from "@/lib/live-worker-client";
-import { startLiveTrackingByUsername } from "@/lib/tiktok-live";
 
 export const runtime = "nodejs";
 void prisma;
@@ -25,6 +24,14 @@ export async function POST(req: Request) {
     await updateConfig({
       tiktokHandle: normalizedUsername || null,
     });
+
+    if (!hasLiveWorkerConfigured()) {
+      return NextResponse.json(
+        { error: "Live worker is not configured. Set LIVE_WORKER_URL to your laptop live server." },
+        { status: 503 }
+      );
+    }
+
     const trackInput = {
       username: normalizedUsername,
       durationSec: body.durationSec ?? 0,
@@ -33,28 +40,15 @@ export async function POST(req: Request) {
       forceRestartIfRunning: body.forceRestartIfRunning ?? true,
     };
 
-    if (hasLiveWorkerConfigured()) {
-      try {
-        const result = await callLiveWorker<{
-          ok: boolean;
-          trackedUsername: string;
-          started: boolean;
-          sessionId?: string;
-          message: string;
-        }>("/track/start", trackInput);
-        return NextResponse.json(result);
-      } catch {
-        // Worker unreachable — fall through to direct tracking
-      }
-    }
+    const result = await callLiveWorker<{
+      ok: boolean;
+      trackedUsername: string;
+      started: boolean;
+      sessionId?: string;
+      message: string;
+    }>("/track/start", trackInput);
 
-    const result = await startLiveTrackingByUsername(trackInput);
-
-    if (!result.started) {
-      return NextResponse.json({ error: result.message }, { status: 400 });
-    }
-
-    return NextResponse.json({ ok: true, trackedUsername: normalizedUsername, ...result });
+    return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Live tracking failed";
     return NextResponse.json({ error: message }, { status: 400 });

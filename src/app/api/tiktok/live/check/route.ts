@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 import { callLiveWorker, hasLiveWorkerConfigured } from "@/lib/live-worker-client";
-import { fetchLiveSnapshotByUsername } from "@/lib/tiktok-live";
 
 export const runtime = "nodejs";
 void prisma;
@@ -17,19 +16,18 @@ export async function POST(req: Request) {
   try {
     const body = checkSchema.parse(await req.json());
 
-    if (hasLiveWorkerConfigured()) {
-      try {
-        const result = await callLiveWorker<{ ok: boolean; snapshot: unknown }>("/track/check", {
-          username: body.username,
-        });
-        return NextResponse.json(result);
-      } catch {
-        // Worker unreachable — fall through to direct check
-      }
+    if (!hasLiveWorkerConfigured()) {
+      return NextResponse.json(
+        { error: "Live worker is not configured. Set LIVE_WORKER_URL to your laptop live server." },
+        { status: 503 }
+      );
     }
 
-    const snapshot = await fetchLiveSnapshotByUsername(body.username);
-    return NextResponse.json({ ok: true, snapshot });
+    const result = await callLiveWorker<{ ok: boolean; snapshot: unknown }>("/track/check", {
+      username: body.username,
+    });
+
+    return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Live check failed";
     return NextResponse.json({ error: message }, { status: 400 });

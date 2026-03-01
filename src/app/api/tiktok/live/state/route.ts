@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getOrCreateConfig } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
-import { refreshLiveTrackingSnapshot } from "@/lib/tiktok-live";
 import { LiveDashboardState } from "@/lib/types";
-import { hasLiveWorkerConfigured } from "@/lib/live-worker-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,14 +12,7 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const runtimeMode = url.searchParams.get("runtime") === "1";
-    const runtimeUsername = url.searchParams.get("username")?.trim().replace(/^@/, "") || undefined;
     const config = await getOrCreateConfig();
-
-    // Fire-and-forget: never block the response on slow upstream TikTok calls.
-    // The refresh writes to DB in the background; the next poll picks it up.
-    if (runtimeMode && !hasLiveWorkerConfigured()) {
-      refreshLiveTrackingSnapshot(runtimeUsername ?? config.tiktokHandle ?? undefined).catch(() => undefined);
-    }
 
     const [liveSessions, latestSyncEvents, spotifyTracks] = runtimeMode
       ? await Promise.all([
